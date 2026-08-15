@@ -85,6 +85,13 @@ export default function App() {
           <button style={toggleBtn(sim.chartType === 'line')} onClick={() => sim.setChartType('line')}>Line</button>
         </div>
 
+        <label style={{ fontSize: 13, color: '#bbb', display: 'flex', alignItems: 'center', gap: 8 }} title="Cash paid per share to holders every 50 ticks — fresh money entering the market">
+          Dividend
+          <input type="range" min={0} max={1} step={0.02} value={sim.dividendPerShare}
+            onChange={(e) => sim.setDividendPerShare(Number(e.target.value))} />
+          <span style={{ width: 74, color: '#eee' }}>${sim.dividendPerShare.toFixed(2)}/sh</span>
+        </label>
+
         <div style={{ marginLeft: 'auto', fontSize: 20, fontWeight: 700, color: '#4ade80' }}>
           ${sim.currentPrice.toFixed(2)}
         </div>

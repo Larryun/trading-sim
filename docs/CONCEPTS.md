@@ -146,11 +146,22 @@ trading; they only change hands. This is **conservation of shares**:
   remaining sellers, a **scarcity-driven price spike**. This is exactly why
   low-float stocks are so volatile.
 
-**In the app:** the supply bar shows the ownership split between the market maker,
-the agents, and you, and lets you set the total shares outstanding. Because the
-maker's asks are **capped by the shares it actually holds**, shrinking the float
-directly thins the sell side of the book — the mechanism behind squeezes and
-scarcity rallies.
+**In the app:** the supply bar shows the ownership split between the agents and
+you. Because a seller's orders are **capped by the shares they actually hold**,
+when holders stop offering, the sell side thins — the mechanism behind squeezes
+and scarcity rallies.
+
+### Cash isn't a closed loop: dividends
+
+Trading only *moves* cash between participants (buyer down, seller up), so the
+market's total cash is otherwise conserved — and gets progressively **locked up in
+positions**, making buying power feel like it dries up. Real markets aren't closed:
+money flows in from outside. The sim models this with **dividends** — every 50
+ticks the "company" pays cash per share held to every owner, injecting fresh money
+(a stock's fundamental value is, after all, the present value of its future
+dividends). Turn the **Dividend** control up and holders keep getting buying power;
+set it to zero for a closed, zero-sum cash pool. This inflow also offsets the cash
+that leaks out to transaction fees (section 9a).
 
 ---
 

@@ -20,6 +20,10 @@ const MAX_TRADES = 500;
 const SENTIMENT_DECAY = 0.92;
 const AUTO_NEWS_PROB = 0.02;
 
+// Dividends inject cash into the market from OUTSIDE the trading system (the
+// company paying shareholders), so the market isn't a closed, zero-sum cash pool.
+const DIVIDEND_INTERVAL = 50; // ticks between dividend payments
+
 interface PendingUserOrder {
   side: Side;
   size: number;
@@ -56,6 +60,10 @@ export class SimulationEngine {
   events: NewsEvent[] = [];
   autoNews = false;
   private nextEventId = 1;
+
+  // Organic cash inflow: cash paid per share held, every DIVIDEND_INTERVAL ticks.
+  dividendPerShare = 0.1;
+  totalDividendsPaid = 0;
 
   private nextAgentNum: Record<AgentType, number> = {
     noise: 0, momentum: 0, meanReversion: 0, news: 0, marketMaker: 0, value: 0, fomoHerd: 0, whale: 0, panicSeller: 0,
@@ -145,6 +153,14 @@ export class SimulationEngine {
 
   step(): Trade[] {
     this.tick += 1;
+
+    // Pay dividends to every holder — fresh cash entering the market from outside
+    // the trading system, so buying power doesn't just get locked up in positions.
+    if (this.dividendPerShare > 0 && this.tick % DIVIDEND_INTERVAL === 0) {
+      for (const a of this.agents) a.cash += a.shares * this.dividendPerShare;
+      this.user.cash += this.user.shares * this.dividendPerShare;
+      this.totalDividendsPaid += this.sharesOutstanding * this.dividendPerShare;
+    }
 
     // No backstop liquidity is injected: the only resting orders are those the
     // agents (esp. market makers) and the user post. If makers pull, the book

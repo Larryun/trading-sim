@@ -72,6 +72,7 @@ export function useSimulation() {
   const [userRestingOrders, setUserRestingOrders] = useState(0);
   const [bookDepth, setBookDepth] = useState<{ bids: BookLevel[]; asks: BookLevel[] }>(() => engineRef.current.book.getDepth(BOOK_DEPTH));
   const [myLimitOrders, setMyLimitOrders] = useState<RestingUserOrder[]>([]);
+  const [dividendPerShare, setDividendState] = useState(engineRef.current.dividendPerShare);
   const [running, setRunning] = useState(true);
   const [tickMs, setTickMs] = useState(200);
   const [barInterval, setBarInterval] = useState(5);
@@ -174,6 +175,11 @@ export function useSimulation() {
     setAutoNews(engineRef.current.autoNews);
   };
 
+  const setDividendPerShare = (v: number) => {
+    engineRef.current.dividendPerShare = v;
+    setDividendState(v);
+  };
+
   const unrealizedPnl = user.shares * (currentPrice - user.avgCost);
 
   return {
@@ -193,6 +199,8 @@ export function useSimulation() {
     autoNews,
     triggerEvent,
     toggleAutoNews,
+    dividendPerShare,
+    setDividendPerShare,
     floatBreakdown,
     lastUserFill,
     userOrders,
