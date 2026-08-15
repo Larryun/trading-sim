@@ -5,6 +5,10 @@ import type { BookLevel, RestingUserOrder } from '../sim/orderBook';
 import type { Agent, AgentAccount, AgentType, Side, UserOrderRecord } from '../sim/types';
 
 const BOOK_DEPTH = 12; // price levels shown per side in the order-book view
+// Cap UI updates to ~15fps regardless of sim tick rate — the engine keeps
+// stepping on its timer, but React state is flushed at most this often. This
+// decouples render cost from tick speed and keeps long sessions smooth.
+const RENDER_INTERVAL_MS = 66;
 
 export type ChartType = 'line' | 'candle';
 export type UserFill = { side: Side; size: number; avgPrice: number; priceBefore: number } | null;
@@ -77,6 +81,10 @@ export function useSimulation() {
   const [tickMs, setTickMs] = useState(200);
   const [stepMs, setStepMs] = useState(0); // measured compute time per tick (smoothed)
   const stepEmaRef = useRef(0);
+  const dirtyRef = useRef(false); // engine advanced since the last UI flush
+  const lastRenderTsRef = useRef(0);
+  const lastBuiltTickRef = useRef(-1); // engine tick the display bars were last built from
+  const lastBuiltIntervalRef = useRef(0); // bar size the display bars were last built at
   const [barInterval, setBarInterval] = useState(5);
   const [chartType, setChartType] = useState<ChartType>('candle');
 
@@ -87,9 +95,14 @@ export function useSimulation() {
 
   // Rebuild only the bounded display window (≈120 bars) from the ring buffers,
   // so per-tick work stays flat no matter how long the sim has been running.
-  const rebuildDisplay = () => {
+  const rebuildDisplay = (force = false) => {
     const engine = engineRef.current;
     const interval = barIntervalRef.current;
+    // Skip the (relatively heavy) bar rebuilds when nothing has changed since the
+    // last build — e.g. a flush while paused, or the bar size is unchanged.
+    if (!force && engine.tick === lastBuiltTickRef.current && interval === lastBuiltIntervalRef.current) return;
+    lastBuiltTickRef.current = engine.tick;
+    lastBuiltIntervalRef.current = interval;
     const samples = MAX_DISPLAY_BARS * interval + interval;
 
     const priceWin = engine.priceRing.window(samples);
@@ -110,13 +123,13 @@ export function useSimulation() {
     setCurrentPrice(engine.currentPrice);
     setBestBid(engine.bestBid);
     setBestAsk(engine.bestAsk);
-    setTrades([...engine.trades].slice(-50).reverse());
+    setTrades(engine.trades.slice(-50).reverse());
     setUser({ ...engine.user });
     setFloatBreakdown(floatOf(engine));
     setSentiment(engine.sentiment);
     setFundamentalValue(engine.fundamentalValue);
     setLastUserFill(engine.lastUserFill);
-    setUserOrders([...engine.userOrders].slice(-50).reverse());
+    setUserOrders(engine.userOrders.slice(-50).reverse());
     setUserRestingOrders(engine.book.countOrdersByOwner('user'));
     setBookDepth(engine.book.getDepth(BOOK_DEPTH));
     setMyLimitOrders(engine.book.getUserOrders());
@@ -124,23 +137,45 @@ export function useSimulation() {
   };
 
   useEffect(() => {
-    if (!running) return;
+    if (!running) {
+      refreshFromEngine(); // paused: show the final engine state once
+      return;
+    }
+    // The timer only advances the engine (cheap) and flags that a flush is due.
     const interval = setInterval(() => {
       const t0 = performance.now();
       engineRef.current.step();
       const dt = performance.now() - t0;
       // Exponential moving average so the readout is stable, not jittery.
       stepEmaRef.current = stepEmaRef.current === 0 ? dt : stepEmaRef.current * 0.9 + dt * 0.1;
-      refreshFromEngine();
-      setStepMs(stepEmaRef.current);
+      dirtyRef.current = true;
     }, tickMs);
-    return () => clearInterval(interval);
+
+    // A separate rAF loop flushes engine state into React at most ~15fps, no
+    // matter how fast the sim ticks — this is what keeps long sessions smooth.
+    let raf = 0;
+    const loop = () => {
+      const now = performance.now();
+      if (dirtyRef.current && now - lastRenderTsRef.current >= RENDER_INTERVAL_MS) {
+        dirtyRef.current = false;
+        lastRenderTsRef.current = now;
+        refreshFromEngine();
+        setStepMs(stepEmaRef.current);
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+
+    return () => {
+      clearInterval(interval);
+      cancelAnimationFrame(raf);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [running, tickMs]);
 
   // Rebuild the chart immediately when the bar size changes (even while paused).
   useEffect(() => {
-    rebuildDisplay();
+    rebuildDisplay(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [barInterval]);
 
