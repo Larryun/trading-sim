@@ -80,6 +80,8 @@ export function useSimulation() {
   const [feeBps, setFeeState] = useState(engineRef.current.feeBps);
   const [running, setRunning] = useState(true);
   const [tickMs, setTickMs] = useState(200);
+  const [stepMs, setStepMs] = useState(0); // measured compute time per tick (smoothed)
+  const stepEmaRef = useRef(0);
   const [barInterval, setBarInterval] = useState(5);
   const [chartType, setChartType] = useState<ChartType>('candle');
 
@@ -129,8 +131,13 @@ export function useSimulation() {
   useEffect(() => {
     if (!running) return;
     const interval = setInterval(() => {
+      const t0 = performance.now();
       engineRef.current.step();
+      const dt = performance.now() - t0;
+      // Exponential moving average so the readout is stable, not jittery.
+      stepEmaRef.current = stepEmaRef.current === 0 ? dt : stepEmaRef.current * 0.9 + dt * 0.1;
       refreshFromEngine();
+      setStepMs(stepEmaRef.current);
     }, tickMs);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -225,6 +232,7 @@ export function useSimulation() {
     setRunning,
     tickMs,
     setTickMs,
+    stepMs,
     user,
     currentPrice,
     fundamentalValue,
