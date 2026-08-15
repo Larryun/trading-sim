@@ -271,10 +271,16 @@ and some **shares**. Orders are constrained by that account.
 
 - **You can't spend cash you don't have** — buys are limited by available cash
   (with a little headroom for slippage).
-- **No naked shorting** — you can't sell shares you don't own. Sell orders are
-  capped at your current share count, so a position can never go negative. (Your
-  *buys*, however, are limited only by the available float, so a big buy really
-  can shock the price.)
+- **Short selling** — bearish "view" traders (and you) can sell shares they don't
+  own by borrowing them (the position goes negative), collateralized by cash. A
+  short **profits when the price falls** and loses when it rises. This is the real
+  way a bear expresses a view — not a permanent "sell bias." It's also what lets
+  an *overvalued* stock be pushed back down: once long holders run out of shares to
+  sell, shorts keep the downward pressure on.
+- **Margin calls & short squeezes** — a short is only collateralized up to its
+  cash. If the price rises enough to wipe out that collateral, the short is
+  **forced to buy back** to cover — which pushes the price up further and can
+  force *other* shorts to cover too: a **short squeeze**.
 - Each account tracks an **average cost basis** — the blended price you paid for
   the shares you hold, updated each time you buy more.
 - **Realized PnL** is profit/loss locked in when you *sell* (sale price minus
@@ -410,8 +416,9 @@ simplifications in mind:
 - **No real fundamentals.** "Sentiment" is an abstract number and "fair value"
   (for value agents) is a modeling assumption — there are no earnings, cash
   flows, or balance sheets underneath.
-- **Simplified shorting/leverage.** No naked shorting and no margin; accounts are
-  constrained to cash and shares on hand.
+- **Simplified shorting/leverage.** Shorting is collateralized crudely (by cash,
+  with a simple maintenance-margin buy-in) rather than a real securities-lending
+  market with borrow fees and locate constraints.
 - **Agents are caricatures.** Each follows one tidy rule. Real participants blend
   many motives, adapt, and learn — which the sim does not attempt.
 
