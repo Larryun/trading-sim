@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import type { VolumeBar } from '../sim/bars';
 
@@ -5,12 +6,12 @@ interface Props {
   volumeBars: VolumeBar[];
 }
 
-export function VolumeChart({ volumeBars }: Props) {
-  const data = volumeBars.map((b) => ({
+export const VolumeChart = memo(function VolumeChart({ volumeBars }: Props) {
+  const data = useMemo(() => volumeBars.map((b) => ({
     index: b.index,
     buy: Number(b.buy.toFixed(1)),
     sell: Number(b.sell.toFixed(1)),
-  }));
+  })), [volumeBars]);
 
   return (
     <div style={{ width: '100%', height: 120 }}>
@@ -33,4 +34,4 @@ export function VolumeChart({ volumeBars }: Props) {
       </ResponsiveContainer>
     </div>
   );
-}
+});

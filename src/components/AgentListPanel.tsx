@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { Agent, AgentType } from '../sim/types';
 import { AGENT_TYPE_COLORS, AGENT_TYPE_LABELS } from '../sim/agents';
 
@@ -59,6 +59,17 @@ export function AgentListPanel({ agents, currentPrice, addAgent, removeAgent, up
   const [newType, setNewType] = useState<AgentType>('noise');
   const [capital, setCapital] = useState(20000);
 
+  // Group agents by type in a single pass (instead of one filter per type).
+  const grouped = useMemo(() => {
+    const m = new Map<AgentType, Agent[]>();
+    for (const a of agents) {
+      const arr = m.get(a.type);
+      if (arr) arr.push(a);
+      else m.set(a.type, [a]);
+    }
+    return m;
+  }, [agents]);
+
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, gap: 12, flexWrap: 'wrap' }}>
@@ -99,7 +110,7 @@ export function AgentListPanel({ agents, currentPrice, addAgent, removeAgent, up
 
       {/* Grouped by type */}
       {AGENT_TYPES.map((type) => {
-        const group = agents.filter((a) => a.type === type);
+        const group = grouped.get(type) ?? [];
         if (group.length === 0) return null;
         const color = AGENT_TYPE_COLORS[type];
         return (

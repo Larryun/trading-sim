@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import type { Bar } from '../sim/bars';
 
 interface Props {
@@ -13,7 +13,7 @@ const PAD_BOTTOM = 20;
 const UP = '#4ade80';
 const DOWN = '#f87171';
 
-export function CandleChart({ bars }: Props) {
+export const CandleChart = memo(function CandleChart({ bars }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(800);
 
@@ -82,4 +82,4 @@ export function CandleChart({ bars }: Props) {
       </svg>
     </div>
   );
-}
+});

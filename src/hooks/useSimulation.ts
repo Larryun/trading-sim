@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { SimulationEngine } from '../sim/engine';
 import { buildBars, buildVolumeBars, type Bar, type VolumeBar } from '../sim/bars';
 import type { BookLevel, RestingUserOrder } from '../sim/orderBook';
@@ -179,55 +179,57 @@ export function useSimulation() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [barInterval]);
 
-  const submitUserOrder = (side: Side, size: number, limitPrice?: number) => {
+  // Stable handler identities (they only touch refs + stable setState), so
+  // React.memo'd children don't re-render just because a new closure was created.
+  const submitUserOrder = useCallback((side: Side, size: number, limitPrice?: number) => {
     if (size <= 0) return;
     engineRef.current.queueUserOrder(side, size, limitPrice);
-  };
+  }, []);
 
-  const cancelUserOrders = () => {
+  const cancelUserOrders = useCallback(() => {
     engineRef.current.cancelUserOrders();
     setUserRestingOrders(engineRef.current.book.countOrdersByOwner('user'));
     setMyLimitOrders(engineRef.current.book.getUserOrders());
     setBookDepth(engineRef.current.book.getDepth(BOOK_DEPTH));
-  };
+  }, []);
 
-  const addAgent = (type: AgentType, capital: number) => {
+  const addAgent = useCallback((type: AgentType, capital: number) => {
     engineRef.current.addAgent(type, capital);
     setAgents(engineRef.current.agents.map((a) => ({ ...a })));
     setFloatBreakdown(floatOf(engineRef.current));
-  };
+  }, []);
 
-  const removeAgent = (id: string) => {
+  const removeAgent = useCallback((id: string) => {
     engineRef.current.removeAgent(id);
     setAgents(engineRef.current.agents.map((a) => ({ ...a })));
     setFloatBreakdown(floatOf(engineRef.current));
-  };
+  }, []);
 
-  const updateAgentParams = (id: string, patch: Record<string, number>) => {
+  const updateAgentParams = useCallback((id: string, patch: Record<string, number>) => {
     engineRef.current.updateAgentParams(id, patch);
     setAgents(engineRef.current.agents.map((a) => ({ ...a })));
-  };
+  }, []);
 
-  const triggerEvent = (sentimentDelta: number) => {
+  const triggerEvent = useCallback((sentimentDelta: number) => {
     engineRef.current.triggerEvent(sentimentDelta);
     setSentiment(engineRef.current.sentiment);
     setFundamentalValue(engineRef.current.fundamentalValue);
-  };
+  }, []);
 
-  const toggleAutoNews = () => {
+  const toggleAutoNews = useCallback(() => {
     engineRef.current.autoNews = !engineRef.current.autoNews;
     setAutoNews(engineRef.current.autoNews);
-  };
+  }, []);
 
-  const setDividendPerShare = (v: number) => {
+  const setDividendPerShare = useCallback((v: number) => {
     engineRef.current.dividendPerShare = v;
     setDividendState(v);
-  };
+  }, []);
 
-  const setFeeBps = (v: number) => {
+  const setFeeBps = useCallback((v: number) => {
     engineRef.current.feeBps = v;
     setFeeState(v);
-  };
+  }, []);
 
   const unrealizedPnl = user.shares * (currentPrice - user.avgCost);
 

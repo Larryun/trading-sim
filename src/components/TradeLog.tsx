@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import type { Agent, Trade } from '../sim/types';
 import { AGENT_TYPE_COLORS } from '../sim/agents';
 
@@ -9,7 +10,7 @@ interface Props {
 const USER_COLOR = '#a78bfa';
 
 export function TradeLog({ trades, agents }: Props) {
-  const byId = new Map(agents.map((a) => [a.id, a]));
+  const byId = useMemo(() => new Map(agents.map((a) => [a.id, a])), [agents]);
 
   // Resolve an owner id to a display name + color (by agent type).
   const resolve = (id: string): { label: string; color: string } => {

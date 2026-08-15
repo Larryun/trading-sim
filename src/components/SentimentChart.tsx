@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, CartesianGrid } from 'recharts';
 import type { SentimentPoint } from '../hooks/useSimulation';
 
@@ -5,9 +6,11 @@ interface Props {
   series: SentimentPoint[];
 }
 
-export function SentimentChart({ series }: Props) {
-  const values = series.length ? series.map((p) => Math.abs(p.value)) : [0];
-  const bound = Math.max(0.5, Math.ceil(Math.max(...values) * 10) / 10);
+export const SentimentChart = memo(function SentimentChart({ series }: Props) {
+  const bound = useMemo(() => {
+    const values = series.length ? series.map((p) => Math.abs(p.value)) : [0];
+    return Math.max(0.5, Math.ceil(Math.max(...values) * 10) / 10);
+  }, [series]);
 
   return (
     <div style={{ width: '100%', height: 160 }}>
@@ -26,4 +29,4 @@ export function SentimentChart({ series }: Props) {
       </ResponsiveContainer>
     </div>
   );
-}
+});

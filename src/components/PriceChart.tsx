@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import type { Bar } from '../sim/bars';
 
@@ -5,14 +6,14 @@ interface Props {
   bars: Bar[];
 }
 
-export function PriceChart({ bars }: Props) {
-  const data = bars.map((b) => ({ index: b.index, close: Number(b.close.toFixed(2)) }));
-
-  // Pad the y-axis a little around the observed range so movement is visible.
-  const closes = bars.length ? bars.map((b) => b.close) : [100];
-  const min = Math.min(...closes);
-  const max = Math.max(...closes);
-  const pad = Math.max((max - min) * 0.1, 1);
+export const PriceChart = memo(function PriceChart({ bars }: Props) {
+  const { data, min, max, pad } = useMemo(() => {
+    const d = bars.map((b) => ({ index: b.index, close: Number(b.close.toFixed(2)) }));
+    const closes = bars.length ? bars.map((b) => b.close) : [100];
+    const lo = Math.min(...closes);
+    const hi = Math.max(...closes);
+    return { data: d, min: lo, max: hi, pad: Math.max((hi - lo) * 0.1, 1) };
+  }, [bars]);
 
   return (
     <div style={{ width: '100%', height: 320 }}>
@@ -35,4 +36,4 @@ export function PriceChart({ bars }: Props) {
       </ResponsiveContainer>
     </div>
   );
-}
+});
