@@ -60,7 +60,6 @@ export interface NoiseAgent extends AgentAccount {
   type: 'noise';
   frequency: number; // probability [0,1] it trades on a given tick
   maxSize: number; // max shares per order
-  bias: number; // directional lean [-1,1]: <0 sells more, >0 buys more
   takeProfit: number; // sell holdings once up this % vs avg cost (0 = off)
   stopLoss: number; // sell holdings once down this % vs avg cost (0 = off)
 }
@@ -72,7 +71,6 @@ export interface MomentumAgent extends AgentAccount {
   window: number; // ticks to look back for the trend
   sensitivity: number; // scales order size with the observed % change
   activity: number; // probability [0,1] it acts on a given tick (async arrivals)
-  bias: number; // directional lean [-1,1]: adds a perceived baseline trend
   takeProfit: number; // sell holdings once up this % vs avg cost (0 = off)
   stopLoss: number; // sell holdings once down this % vs avg cost (0 = off)
 }
@@ -85,7 +83,6 @@ export interface MeanReversionAgent extends AgentAccount {
   threshold: number; // % deviation from MA required to act
   strength: number; // scales order size with the deviation
   activity: number; // probability [0,1] it acts on a given tick (async arrivals)
-  bias: number; // directional lean [-1,1]: shifts perceived fair value
   takeProfit: number; // sell holdings once up this % vs avg cost (0 = off)
   stopLoss: number; // sell holdings once down this % vs avg cost (0 = off)
 }
@@ -97,7 +94,6 @@ export interface NewsAgent extends AgentAccount {
   type: 'news';
   orderSize: number; // base shares per order (scaled by sentiment strength)
   activity: number; // probability [0,1] it acts on a given tick (async arrivals)
-  bias: number; // directional lean [-1,1]: acts like a persistent sentiment backdrop
   takeProfit: number; // sell holdings once up this % vs avg cost (0 = off)
   stopLoss: number; // sell holdings once down this % vs avg cost (0 = off)
 }
@@ -112,7 +108,6 @@ export interface MarketMakerAgent extends AgentAccount {
   levels: number; // number of price levels quoted on each side (book depth)
   inventorySkew: number; // how strongly to skew quotes to unwind inventory [0,1]
   activity: number; // probability [0,1] it re-quotes on a given tick
-  bias: number; // directional lean [-1,1]: shifts both quotes
   takeProfit: number; // unused for MM (kept for shared overlay); default 0
   stopLoss: number; // unused for MM; default 0
 }
@@ -127,7 +122,6 @@ export interface ValueAgent extends AgentAccount {
   contrarianGain: number; // how strongly negative sentiment raises buy willingness
   maxOrderShares: number; // per-order cap to avoid severe slippage
   activity: number;
-  bias: number; // carried for UI uniformity; ignored by this strategy
   takeProfit: number; // 0 (value investors don't stop out)
   stopLoss: number; // 0
 }
@@ -143,7 +137,6 @@ export interface FomoHerdAgent extends AgentAccount {
   convexity: number; // how strongly buy size scales with the run's steepness
   maxBuyFrac: number; // max fraction of remaining cash per buy at full FOMO
   activity: number;
-  bias: number; // carried for UI uniformity; ignored
   takeProfit: number; // 0.12 (exits via shared overlay)
   stopLoss: number; // 0 (diamond hands)
 }
@@ -158,7 +151,7 @@ export interface WhaleAgent extends AgentAccount {
   participationJitter: number; // random +/- fraction on slice size (footprint masking)
   impactBudget: number; // adverse recent move that triggers a probabilistic skip
   activity: number;
-  bias: number; // sign is the mandate: >=0 accumulate, <0 distribute
+  mandate: number; // +1 = accumulate up to targetShares, -1 = distribute down to it
   takeProfit: number; // 0
   stopLoss: number; // 0
 }
@@ -175,7 +168,6 @@ export interface PanicSellerAgent extends AgentAccount {
   sentPanic: number; // negative-sentiment magnitude that triggers selling
   reentryFrac: number; // fraction of cash redeployed per tick once panic subsides
   activity: number;
-  bias: number; // carried for UI uniformity; ignored
   takeProfit: number; // 0 (owns its own exit)
   stopLoss: number; // 0
 }

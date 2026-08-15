@@ -1,5 +1,5 @@
 import { OrderBook } from './orderBook';
-import { AGENT_TYPE_LABELS, applyBuy, applySell, createAgent, decideOrder } from './agents';
+import { AGENT_TYPE_LABELS, applyTrade, createAgent, decideOrder } from './agents';
 import { randomHeadline } from './news';
 import { RingBuffer } from './ringBuffer';
 import type { Agent, AgentAccount, AgentType, MarketState, NewsEvent, Side, Trade, UserOrderRecord } from './types';
@@ -18,6 +18,13 @@ const STRATEGY_WINDOW = 256;
 const MAX_TRADES = 500;
 
 const AUTO_NEWS_PROB = 0.02;
+
+// Short selling: bearish "view" traders can borrow & sell (shares go negative),
+// collateralized by their cash. If a rising price wipes out that collateral they
+// get margin-called and forced to buy back — the fuel for short squeezes.
+const CAN_SHORT = new Set<AgentType>(['value', 'meanReversion', 'momentum', 'news']);
+const SHORT_COLLATERAL = 1; // may short up to this * cash worth of shares
+const MAINT_MARGIN = 0.25; // margin call when equity falls below this * short exposure
 // Sentiment realism: beyond discrete news jumps, the "mood" also reacts to recent
 // price action (reflexivity), wobbles randomly, spikes harder on the way down
 // (fear), and gets jumpier when already excited (volatility clustering).
@@ -167,8 +174,8 @@ export class SimulationEngine {
   private settle(trade: Trade, reg: Map<string, AgentAccount>): void {
     const buyer = reg.get(trade.buyerId);
     const seller = reg.get(trade.sellerId);
-    if (buyer) applyBuy(buyer, trade.price, trade.size);
-    if (seller) applySell(seller, trade.price, trade.size);
+    if (buyer) applyTrade(buyer, 'buy', trade.price, trade.size);
+    if (seller) applyTrade(seller, 'sell', trade.price, trade.size);
 
     // The taker (whoever crossed the spread) pays a fee to the broker/exchange.
     // This cash leaves the participant system — it is NOT paid to anyone here.
@@ -236,20 +243,40 @@ export class SimulationEngine {
     }
 
     for (const agent of order) {
+      const px = this.book.getLastTradePrice();
+
+      // Margin call: an underwater short is forced to buy back (cover), which can
+      // trigger further covering as the price rises — a short squeeze.
+      if (agent.shares < -MIN_ORDER) {
+        const exposure = -agent.shares * px;
+        const equity = agent.cash + agent.shares * px;
+        if (equity < MAINT_MARGIN * exposure) {
+          this.book.cancelOrdersByOwner(agent.id);
+          const cover = Math.max(MIN_ORDER, -agent.shares * 0.5);
+          for (const t of this.book.submitMarketOrder('buy', cover, agent.id, this.tick)) {
+            this.settle(t, registry);
+            tickTrades.push(t);
+          }
+          continue; // busy covering this tick
+        }
+      }
+
       const intents = decideOrder(agent, market);
       if (intents.length === 0) continue; // inactive makers keep their resting quotes
 
       this.book.cancelOrdersByOwner(agent.id); // cancel-and-replace
       let availCash = agent.cash;
       let availShares = agent.shares;
+      const maxShort = CAN_SHORT.has(agent.type) && px > 0 ? (SHORT_COLLATERAL * agent.cash) / px : 0;
 
       for (const intent of intents) {
         let size = intent.size;
         if (intent.side === 'buy') {
-          const refPrice = intent.limitPrice ?? this.book.getLastTradePrice() * 1.05;
+          const refPrice = intent.limitPrice ?? px * 1.05;
           size = Math.min(size, refPrice > 0 ? availCash / refPrice : 0);
         } else {
-          size = Math.min(size, availShares);
+          // Sell what's held, plus a collateral-limited short for bearish types.
+          size = Math.min(size, Math.max(0, availShares + maxShort));
         }
         if (size < MIN_ORDER) continue;
 
@@ -262,7 +289,7 @@ export class SimulationEngine {
         }
 
         // Commit the resource so a second intent (e.g. a maker's other quote) can't reuse it.
-        if (intent.side === 'buy') availCash -= size * (intent.limitPrice ?? this.book.getLastTradePrice());
+        if (intent.side === 'buy') availCash -= size * (intent.limitPrice ?? px);
         else availShares -= size;
       }
     }

@@ -78,45 +78,40 @@ export function createAgent(
   switch (type) {
     case 'noise':
       // Pure liquidity/noise: no profit-seeking exit (let it churn both ways).
-      return { id, name, type, frequency: 0.35, maxSize: 14, bias: 0, takeProfit: 0, stopLoss: 0, ...account };
+      return { id, name, type, frequency: 0.35, maxSize: 14, takeProfit: 0, stopLoss: 0, ...account };
     case 'momentum':
       // Trend follower: let winners run (wide TP), cut losers.
-      return { id, name, type, window: 10, sensitivity: 5, activity: 0.6, bias: 0, takeProfit: 0.15, stopLoss: 0.06, ...account };
+      return { id, name, type, window: 10, sensitivity: 5, activity: 0.6, takeProfit: 0.15, stopLoss: 0.06, ...account };
     case 'meanReversion':
       // Fades extremes: quick to take small gains, slow to cut.
-      return { id, name, type, window: 20, threshold: 0.01, strength: 5, activity: 0.5, bias: 0, takeProfit: 0.04, stopLoss: 0.10, ...account };
+      return { id, name, type, window: 20, threshold: 0.01, strength: 5, activity: 0.5, takeProfit: 0.04, stopLoss: 0.10, ...account };
     case 'news':
-      return { id, name, type, orderSize: 400, activity: 0.7, bias: 0, takeProfit: 0.06, stopLoss: 0.06, ...account };
+      return { id, name, type, orderSize: 400, activity: 0.7, takeProfit: 0.06, stopLoss: 0.06, ...account };
     case 'marketMaker':
       // A maker manages inventory via quote skew, so the shared TP/SL exit is off.
       // Deep ladders (many levels, large size) so the book absorbs aggressive flow.
-      return { id, name, type, spreadBps: 14, quoteSize: 200, levels: 12, inventorySkew: 0.4, activity: 0.8, bias: 0, takeProfit: 0, stopLoss: 0, ...account };
+      return { id, name, type, spreadBps: 14, quoteSize: 200, levels: 12, inventorySkew: 0.4, activity: 0.8, takeProfit: 0, stopLoss: 0, ...account };
     case 'value':
       // Strong, forceful fundamentalists so price is tightly tethered to fair value
       // (the main long-only force correcting mispricing without shorting).
-      return { id, name, type, marginOfSafety: 0.015, conviction: 22, contrarianGain: 0.25, maxOrderShares: 3000, activity: 0.65, bias: 0, takeProfit: 0, stopLoss: 0, ...account };
+      return { id, name, type, marginOfSafety: 0.015, conviction: 22, contrarianGain: 0.25, maxOrderShares: 3000, activity: 0.65, takeProfit: 0, stopLoss: 0, ...account };
     case 'fomoHerd':
       // Threshold lowered to match the (small) moves a deeply-liquid book produces,
       // so the crowd actually chases rallies instead of waiting for a rare spike.
-      return { id, name, type, shortWindow: 3, entryThreshold: 0.002, sentimentGain: 1, convexity: 2, maxBuyFrac: 0.4, activity: 0.5, bias: 0, takeProfit: 0.12, stopLoss: 0, ...account };
+      return { id, name, type, shortWindow: 3, entryThreshold: 0.002, sentimentGain: 1, convexity: 2, maxBuyFrac: 0.4, activity: 0.5, takeProfit: 0.12, stopLoss: 0, ...account };
     case 'whale':
-      // bias sign is the mandate: >=0 accumulate up to targetShares, <0 distribute down to it.
+      // mandate: +1 accumulate up to targetShares, -1 distribute down to it.
       // Starts cash-heavy (a whale about to accumulate holds mostly cash), and a
       // modest default target so it doesn't try to corner the whole float.
       return {
         id, name, type, targetShares: 1000, sliceSize: 40, participationJitter: 0.3, impactBudget: 0.008,
-        activity: 0.6, bias: 1, takeProfit: 0, stopLoss: 0,
+        activity: 0.6, mandate: 1, takeProfit: 0, stopLoss: 0,
         ...account, cash: capital * 0.9, shares: (capital * 0.1) / startingPrice,
       };
     case 'panicSeller':
-      return { id, name, type, peakWindow: 15, panicThreshold: 0.06, capitulationDD: 0.15, baseDumpFrac: 0.4, sentPanic: 0.6, reentryFrac: 0.3, activity: 0.7, bias: 0, takeProfit: 0, stopLoss: 0, ...account };
+      return { id, name, type, peakWindow: 15, panicThreshold: 0.06, capitulationDD: 0.15, baseDumpFrac: 0.4, sentPanic: 0.6, reentryFrac: 0.3, activity: 0.7, takeProfit: 0, stopLoss: 0, ...account };
   }
 }
-
-// How strongly a unit of `bias` (|1|) tilts each strategy.
-const BIAS_TREND = 0.01; // momentum: perceived baseline % trend
-const BIAS_DEVIATION = 0.03; // mean-reversion: perceived fair-value shift
-const BIAS_SENTIMENT = 1; // news: persistent sentiment backdrop
 
 /** Probability an agent evaluates a decision this tick (its async arrival rate). */
 function actsThisTick(agent: Agent): boolean {
@@ -141,16 +136,13 @@ export function decideOrder(agent: Agent, market: MarketState): OrderIntent[] {
   // Otherwise fall through to the agent's entry/base strategy.
   switch (agent.type) {
     case 'noise': {
-      // Bias tilts the buy/sell coin flip: bias=+1 always buys, -1 always sells.
-      const buyProb = Math.min(1, Math.max(0, 0.5 + 0.5 * agent.bias));
-      const side: Side = Math.random() < buyProb ? 'buy' : 'sell';
+      // Random uninformed flow — a fair coin flip on side.
+      const side: Side = Math.random() < 0.5 ? 'buy' : 'sell';
       const size = Math.random() * agent.maxSize;
       return size > 0 ? [{ side, size }] : [];
     }
     case 'momentum': {
-      // Bias adds a perceived baseline trend, so a bullish momentum agent buys
-      // even in a flat market.
-      const change = pctChange(market.priceHistory, agent.window) + agent.bias * BIAS_TREND;
+      const change = pctChange(market.priceHistory, agent.window);
       if (Math.abs(change) <= 0.0001) return [];
       const side: Side = change > 0 ? 'buy' : 'sell';
       const size = agent.sensitivity * Math.abs(change) * BASE_SIZE;
@@ -158,23 +150,18 @@ export function decideOrder(agent: Agent, market: MarketState): OrderIntent[] {
     }
     case 'meanReversion': {
       const ma = movingAverage(market.priceHistory, agent.window);
-      const rawDeviation = ma > 0 ? (price - ma) / ma : 0;
-      // Bias shifts perceived fair value up, so the agent treats price as cheaper
-      // and leans toward buying.
-      const deviation = rawDeviation - agent.bias * BIAS_DEVIATION;
+      const deviation = ma > 0 ? (price - ma) / ma : 0;
       if (Math.abs(deviation) <= agent.threshold) return [];
-      const side: Side = deviation > 0 ? 'sell' : 'buy'; // fade the (adjusted) move
+      const side: Side = deviation > 0 ? 'sell' : 'buy'; // fade the move
       const size = agent.strength * Math.abs(deviation) * BASE_SIZE;
       return size > 0 ? [{ side, size }] : [];
     }
     case 'news': {
       // Informed traders act on incoming information: buy on positive sentiment,
-      // sell on negative. Bias acts like a persistent sentiment backdrop, and the
-      // base order size is user-set and scales with the effective sentiment.
-      const effectiveSentiment = market.sentiment + agent.bias * BIAS_SENTIMENT;
-      if (Math.abs(effectiveSentiment) <= 0.02) return [];
-      const side: Side = effectiveSentiment > 0 ? 'buy' : 'sell';
-      const size = agent.orderSize * Math.abs(effectiveSentiment);
+      // sell on negative, sized by how strong the current sentiment is.
+      if (Math.abs(market.sentiment) <= 0.02) return [];
+      const side: Side = market.sentiment > 0 ? 'buy' : 'sell';
+      const size = agent.orderSize * Math.abs(market.sentiment);
       return size > 0 ? [{ side, size }] : [];
     }
     case 'marketMaker': {
@@ -187,7 +174,7 @@ export function decideOrder(agent: Agent, market: MarketState): OrderIntent[] {
       const targetShares = mid > 0 ? equity / 2 / mid : 0; // aim to hold ~half in stock
       const excess = targetShares > 0 ? (agent.shares - targetShares) / targetShares : 0;
       const skew = agent.inventorySkew * Math.max(-1, Math.min(1, excess)) * half;
-      const center = mid + agent.bias * half - skew;
+      const center = mid - skew;
       const intents: OrderIntent[] = [];
       for (let level = 1; level <= agent.levels; level++) {
         // Innermost first, so if capital runs low the near-touch levels post first.
@@ -237,10 +224,10 @@ export function decideOrder(agent: Agent, market: MarketState): OrderIntent[] {
       return size > 0 ? [{ side: 'buy', size }] : [];
     }
     case 'whale': {
-      // Execute a large program in low-impact slices; bias sign is the mandate.
+      // Execute a large program in low-impact slices; mandate sign sets direction.
       const jitter = 1 + (Math.random() * 2 - 1) * agent.participationJitter;
       const r = pctChange(market.priceHistory, 5); // recent move as an impact proxy
-      if (agent.bias >= 0) {
+      if (agent.mandate >= 0) {
         const remaining = agent.targetShares - agent.shares;
         if (remaining < MIN_ORDER) return []; // program complete -> dormant
         if (r > agent.impactBudget && Math.random() < 0.7) return []; // ran up hard -> throttle
@@ -279,24 +266,38 @@ export function decideOrder(agent: Agent, market: MarketState): OrderIntent[] {
   }
 }
 
-/** Apply a buy fill to an account (increase shares at blended avg cost, spend cash). */
-export function applyBuy(account: AgentAccount, price: number, size: number): void {
-  const cost = price * size;
-  const newShares = account.shares + size;
-  account.avgCost = newShares > 0 ? (account.avgCost * account.shares + cost) / newShares : 0;
-  account.shares = newShares;
-  account.cash -= cost;
+/**
+ * Apply a fill to an account, supporting signed positions (long OR short).
+ * `avgCost` is the entry price of the current position; a short position has
+ * negative shares and profits when price falls. Handles opening, adding,
+ * reducing, and flipping through zero — so short selling works correctly.
+ */
+export function applyTrade(account: AgentAccount, side: Side, price: number, size: number): void {
+  const dir = side === 'buy' ? 1 : -1;
+  const cur = account.shares;
+  account.cash -= dir * price * size; // buy spends cash, sell/short receives it
   account.tradeCount += 1;
-}
 
-/** Apply a sell fill to an account (reduce shares, book realized PnL, receive cash). */
-export function applySell(account: AgentAccount, price: number, size: number): void {
-  account.realizedPnl += (price - account.avgCost) * size;
-  account.shares -= size;
-  account.cash += price * size;
-  if (account.shares <= 1e-9) {
+  if (cur === 0 || Math.sign(cur) === dir) {
+    // Opening or increasing the position in the same direction: blend avg cost.
+    const mag = Math.abs(cur);
+    account.avgCost = (account.avgCost * mag + price * size) / (mag + size);
+    account.shares = cur + dir * size;
+    return;
+  }
+
+  // Trading against the position: realize PnL on the portion that closes.
+  const closing = Math.min(size, Math.abs(cur));
+  const wasLong = cur > 0;
+  account.realizedPnl += (wasLong ? price - account.avgCost : account.avgCost - price) * closing;
+  const newShares = cur + dir * size;
+  account.shares = newShares;
+  if (Math.abs(newShares) < 1e-9) {
     account.shares = 0;
     account.avgCost = 0;
+  } else if (Math.sign(newShares) === dir) {
+    // Flipped through zero — the remainder opens a fresh position at this price.
+    account.avgCost = price;
   }
-  account.tradeCount += 1;
+  // else: partial close, avgCost of the remaining position is unchanged.
 }

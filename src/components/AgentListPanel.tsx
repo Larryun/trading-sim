@@ -12,8 +12,7 @@ interface Props {
 
 const AGENT_TYPES: AgentType[] = ['noise', 'momentum', 'meanReversion', 'news', 'marketMaker', 'value', 'fomoHerd', 'whale', 'panicSeller'];
 
-// Which types actually read the shared knobs (used to hide irrelevant sliders).
-const USES_BIAS: AgentType[] = ['noise', 'momentum', 'meanReversion', 'news', 'marketMaker', 'whale'];
+// Which types use the shared take-profit / stop-loss exit overlay.
 const USES_EXITS: AgentType[] = ['noise', 'momentum', 'meanReversion', 'news', 'fomoHerd'];
 
 // Hover help for each parameter, keyed by its slider label.
@@ -49,8 +48,7 @@ const PARAM_HELP: Record<string, string> = {
   'Fear trigger': 'Negative-sentiment level that triggers selling on its own.',
   'Re-entry (% cash)': 'Cash redeployed per tick when buying back the recovery.',
   Activity: 'Chance it evaluates and acts on a given tick (staggers order flow).',
-  'Bias (sell ↔ buy)': 'Directional lean on its decisions: left = sell more, right = buy more.',
-  'Mandate (distrib ↔ accum)': 'Whale program direction: left = distribute (sell), right = accumulate (buy).',
+  Mandate: 'Accumulate (buy up to the target) or distribute (sell down to it).',
   'Take profit': 'Sell to lock in gains once up this % above average cost.',
   'Stop loss': 'Sell to cut losses once down this % below average cost.',
 };
@@ -281,6 +279,8 @@ function AgentCard({
                 onChange={(v) => onUpdate({ participationJitter: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
               <Slider label="Impact budget" value={agent.impactBudget} min={0} max={0.05} step={0.001}
                 onChange={(v) => onUpdate({ impactBudget: v })} format={(v) => `${(v * 100).toFixed(1)}%`} />
+              <Slider label="Mandate" value={agent.mandate} min={-1} max={1} step={2}
+                onChange={(v) => onUpdate({ mandate: v })} format={(v) => (v >= 0 ? 'accumulate' : 'distribute')} />
               <Slider label="Activity" value={agent.activity} min={0} max={1} step={0.05}
                 onChange={(v) => onUpdate({ activity: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
             </>
@@ -302,14 +302,6 @@ function AgentCard({
               <Slider label="Activity" value={agent.activity} min={0} max={1} step={0.05}
                 onChange={(v) => onUpdate({ activity: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
             </>
-          )}
-          {/* Bias — shown only for types that read it (whale reads it as a mandate). */}
-          {USES_BIAS.includes(agent.type) && (
-            <Slider
-              label={agent.type === 'whale' ? 'Mandate (distrib ↔ accum)' : 'Bias (sell ↔ buy)'}
-              value={agent.bias} min={-1} max={1} step={0.05}
-              onChange={(v) => onUpdate({ bias: v })}
-              format={(v) => (v === 0 ? 'neutral' : `${v > 0 ? '+' : ''}${(v * 100).toFixed(0)}%`)} />
           )}
           {/* Take-profit / stop-loss — only for types that use the shared exit overlay. */}
           {USES_EXITS.includes(agent.type) && (
