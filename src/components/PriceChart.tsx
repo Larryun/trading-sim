@@ -16,7 +16,7 @@ export const PriceChart = memo(function PriceChart({ bars }: Props) {
   }, [bars]);
 
   return (
-    <div style={{ width: '100%', height: 320 }}>
+    <div style={{ width: '100%', height: 260 }}>
       <ResponsiveContainer>
         <LineChart data={data} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#2a2a3a" />

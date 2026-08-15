@@ -28,7 +28,7 @@ export function TradingView() {
   return (
     <div style={pageWrap}>
       {/* Simulation loop controls */}
-      <div style={{ ...panel, display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
+      <div style={{ ...panel, display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
         <button
           onClick={() => sim.setRunning((r) => !r)}
           style={{
@@ -44,11 +44,11 @@ export function TradingView() {
           {sim.running ? 'Pause' : 'Run'}
         </button>
 
-        <label style={{ fontSize: 13, color: '#bbb', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <label style={{ fontSize: 13, color: '#bbb', display: 'flex', alignItems: 'center', gap: 8 }} title="Delay between ticks — 0 = as fast as possible (render stays capped at ~15fps)">
           Speed
-          <input type="range" min={50} max={1000} step={50} value={sim.tickMs}
+          <input type="range" min={0} max={1000} step={10} value={sim.tickMs}
             onChange={(e) => sim.setTickMs(Number(e.target.value))} />
-          <span style={{ width: 66, color: '#eee' }}>{sim.tickMs} ms</span>
+          <span style={{ width: 74, color: '#eee' }}>{sim.tickMs === 0 ? 'max' : `${sim.tickMs} ms`}</span>
         </label>
 
         <label style={{ fontSize: 13, color: '#bbb', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -90,12 +90,12 @@ export function TradingView() {
       </div>
 
       {/* Share supply */}
-      <div style={{ ...panel, marginBottom: 16 }}>
+      <div style={{ ...panel, marginBottom: 10 }}>
         <SupplyBar floatBreakdown={sim.floatBreakdown} />
       </div>
 
       {/* Charts: price on top, buy/sell order flow below */}
-      <div style={{ ...panel, marginBottom: 16 }}>
+      <div style={{ ...panel, marginBottom: 10 }}>
         {sim.chartType === 'candle' ? <CandleChart bars={sim.bars} /> : <PriceChart bars={sim.bars} />}
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #2a2a3a' }}>
           <VolumeChart volumeBars={sim.volumeBars} />
@@ -103,7 +103,7 @@ export function TradingView() {
       </div>
 
       {/* Agents + trade panel */}
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16, marginBottom: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 10, marginBottom: 10 }}>
         <div style={panel}>
           <AgentListPanel
             agents={sim.agents}
@@ -113,7 +113,7 @@ export function TradingView() {
             updateAgentParams={sim.updateAgentParams}
           />
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={panel}>
             <TradePanel
               submitUserOrder={sim.submitUserOrder}
@@ -135,12 +135,12 @@ export function TradingView() {
       </div>
 
       {/* User order history */}
-      <div style={{ ...panel, marginBottom: 16 }}>
+      <div style={{ ...panel, marginBottom: 10 }}>
         <UserOrderHistory orders={sim.userOrders} />
       </div>
 
       {/* News/sentiment + trade log */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
         <div style={panel}>
           <NewsFeed
             sentimentSeries={sim.sentimentSeries}

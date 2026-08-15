@@ -13,7 +13,7 @@ export const SentimentChart = memo(function SentimentChart({ series }: Props) {
   }, [series]);
 
   return (
-    <div style={{ width: '100%', height: 160 }}>
+    <div style={{ width: '100%', height: 120 }}>
       <ResponsiveContainer>
         <LineChart data={series} margin={{ top: 8, right: 20, left: 0, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#2a2a3a" />

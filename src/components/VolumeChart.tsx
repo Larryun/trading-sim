@@ -14,7 +14,7 @@ export const VolumeChart = memo(function VolumeChart({ volumeBars }: Props) {
   })), [volumeBars]);
 
   return (
-    <div style={{ width: '100%', height: 120 }}>
+    <div style={{ width: '100%', height: 84 }}>
       <div style={{ display: 'flex', gap: 14, fontSize: 11, color: '#888', marginBottom: 2 }}>
         <span><span style={{ color: '#4ade80' }}>■</span> buy volume</span>
         <span><span style={{ color: '#f87171' }}>■</span> sell volume</span>

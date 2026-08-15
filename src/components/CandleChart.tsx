@@ -5,7 +5,7 @@ interface Props {
   bars: Bar[];
 }
 
-const HEIGHT = 320;
+const HEIGHT = 260;
 const PAD_LEFT = 56;
 const PAD_RIGHT = 12;
 const PAD_TOP = 10;
