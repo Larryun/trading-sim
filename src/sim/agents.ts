@@ -95,7 +95,9 @@ export function createAgent(
       // value (the main long-only force correcting mispricing without shorting).
       return { id, name, type, marginOfSafety: 0.05, conviction: 12, contrarianGain: 0.3, maxOrderShares: 1000, activity: 0.35, bias: 0, takeProfit: 0, stopLoss: 0, ...account };
     case 'fomoHerd':
-      return { id, name, type, shortWindow: 4, entryThreshold: 0.008, sentimentGain: 1, convexity: 2, maxBuyFrac: 0.4, activity: 0.5, bias: 0, takeProfit: 0.12, stopLoss: 0, ...account };
+      // Threshold lowered to match the (small) moves a deeply-liquid book produces,
+      // so the crowd actually chases rallies instead of waiting for a rare spike.
+      return { id, name, type, shortWindow: 3, entryThreshold: 0.002, sentimentGain: 1, convexity: 2, maxBuyFrac: 0.4, activity: 0.5, bias: 0, takeProfit: 0.12, stopLoss: 0, ...account };
     case 'whale':
       // bias sign is the mandate: >=0 accumulate up to targetShares, <0 distribute down to it.
       // Starts cash-heavy (a whale about to accumulate holds mostly cash), and a
