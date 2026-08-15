@@ -24,25 +24,20 @@ const MAX_DISPLAY_BARS = 120;
 
 function createEngine(): SimulationEngine {
   const engine = new SimulationEngine();
-  // With no backstop, ALL liquidity comes from these agents, so the market
-  // makers are seeded with deep inventory/capital to supply a healthy book.
-  // Two-sided flow comes from the fade/value/panic side vs the trend/FOMO side.
-  engine.addAgent('marketMaker', 300000);
-  engine.addAgent('marketMaker', 300000);
-  engine.addAgent('noise', 20000);
-  engine.addAgent('noise', 20000);
-  engine.addAgent('momentum', 20000);
-  engine.addAgent('meanReversion', 30000);
-  engine.addAgent('news', 20000);
-  // A strong value cohort keeps price tethered to the (news-driven) fundamental.
-  engine.addAgent('value', 80000);
-  engine.addAgent('value', 80000);
-  engine.addAgent('value', 80000);
-  engine.addAgent('fomoHerd', 20000);
-  engine.addAgent('fomoHerd', 20000);
+  // Empirically tuned mix (see the tuning workflow): deep, well-capitalized market
+  // makers provide the book; a strong value cohort tethers price to the news-driven
+  // fundamental; panic sellers add downside pressure; noise/momentum/news add churn.
+  for (let i = 0; i < 5; i++) engine.addAgent('marketMaker', 750000);
+  for (let i = 0; i < 4; i++) engine.addAgent('value', 500000);
+  engine.addAgent('momentum', 30000);
+  engine.addAgent('momentum', 30000);
+  engine.addAgent('noise', 25000);
+  engine.addAgent('noise', 25000);
   engine.addAgent('panicSeller', 40000);
   engine.addAgent('panicSeller', 40000);
-  // (No whale by default — add one to watch a large order move a shallow book.)
+  engine.addAgent('news', 40000);
+  // Not seeded by default (they fight fundamental tracking / are situational):
+  // mean-reversion, FOMO herd, whale — all available from the Add dropdown.
   return engine;
 }
 

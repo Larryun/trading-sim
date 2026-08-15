@@ -78,22 +78,23 @@ export function createAgent(
   switch (type) {
     case 'noise':
       // Pure liquidity/noise: no profit-seeking exit (let it churn both ways).
-      return { id, name, type, frequency: 0.2, maxSize: 10, bias: 0, takeProfit: 0, stopLoss: 0, ...account };
+      return { id, name, type, frequency: 0.35, maxSize: 14, bias: 0, takeProfit: 0, stopLoss: 0, ...account };
     case 'momentum':
       // Trend follower: let winners run (wide TP), cut losers.
-      return { id, name, type, window: 10, sensitivity: 5, activity: 0.5, bias: 0, takeProfit: 0.15, stopLoss: 0.06, ...account };
+      return { id, name, type, window: 10, sensitivity: 5, activity: 0.6, bias: 0, takeProfit: 0.15, stopLoss: 0.06, ...account };
     case 'meanReversion':
       // Fades extremes: quick to take small gains, slow to cut.
       return { id, name, type, window: 20, threshold: 0.01, strength: 5, activity: 0.5, bias: 0, takeProfit: 0.04, stopLoss: 0.10, ...account };
     case 'news':
-      return { id, name, type, orderSize: 200, activity: 0.5, bias: 0, takeProfit: 0.06, stopLoss: 0.06, ...account };
+      return { id, name, type, orderSize: 400, activity: 0.7, bias: 0, takeProfit: 0.06, stopLoss: 0.06, ...account };
     case 'marketMaker':
       // A maker manages inventory via quote skew, so the shared TP/SL exit is off.
-      return { id, name, type, spreadBps: 8, quoteSize: 100, levels: 6, inventorySkew: 0.5, activity: 0.8, bias: 0, takeProfit: 0, stopLoss: 0, ...account };
+      // Deep ladders (many levels, large size) so the book absorbs aggressive flow.
+      return { id, name, type, spreadBps: 14, quoteSize: 200, levels: 12, inventorySkew: 0.4, activity: 0.8, bias: 0, takeProfit: 0, stopLoss: 0, ...account };
     case 'value':
-      // Strong, active fundamentalists so price is meaningfully tethered to fair
-      // value (the main long-only force correcting mispricing without shorting).
-      return { id, name, type, marginOfSafety: 0.05, conviction: 12, contrarianGain: 0.3, maxOrderShares: 1000, activity: 0.35, bias: 0, takeProfit: 0, stopLoss: 0, ...account };
+      // Strong, forceful fundamentalists so price is tightly tethered to fair value
+      // (the main long-only force correcting mispricing without shorting).
+      return { id, name, type, marginOfSafety: 0.015, conviction: 22, contrarianGain: 0.25, maxOrderShares: 3000, activity: 0.65, bias: 0, takeProfit: 0, stopLoss: 0, ...account };
     case 'fomoHerd':
       // Threshold lowered to match the (small) moves a deeply-liquid book produces,
       // so the crowd actually chases rallies instead of waiting for a rare spike.

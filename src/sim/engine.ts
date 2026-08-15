@@ -56,16 +56,18 @@ export class SimulationEngine {
   };
 
   sentiment = 0;
-  sentimentDecay = 0.92; // transient sentiment shrinks to this fraction each tick
+  sentimentDecay = 0.9; // transient sentiment shrinks to this fraction each tick
   fundamentalValue = STARTING_PRICE; // the "true" value; permanently moved by news
-  fundamentalImpact = 0.03; // fraction the fundamental moves per unit of news sentiment
+  // Tuned low so the news-driven fundamental stays within reach of the long-only
+  // agent pool in BOTH directions (they can't short to chase a crashed fair).
+  fundamentalImpact = 0.012; // fraction the fundamental moves per unit of news sentiment
   events: NewsEvent[] = [];
   autoNews = false;
   private nextEventId = 1;
 
   // Organic cash inflow: cash paid per share held, every DIVIDEND_INTERVAL ticks.
-  // Kept modest so it doesn't inflate price far above fundamental value.
-  dividendPerShare = 0.04;
+  // Tuned to roughly balance the 5bps taker fee outflow so cash drift stays ~0.
+  dividendPerShare = 0.02;
   totalDividendsPaid = 0;
 
   // Transaction cost: the taker (aggressor) pays this fraction of notional on every
