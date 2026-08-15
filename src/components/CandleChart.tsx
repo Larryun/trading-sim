@@ -73,7 +73,9 @@ export const CandleChart = memo(function CandleChart({ bars }: Props) {
           const bodyBottom = yScale(Math.min(b.open, b.close));
           const bodyH = Math.max(1, bodyBottom - bodyTop);
           return (
-            <g key={b.index}>
+            // Key by slot position, not the monotonic bar index, so the ~120 <g>
+            // nodes are reused as the window slides instead of remounting.
+            <g key={i}>
               <line x1={cx} y1={yScale(b.high)} x2={cx} y2={yScale(b.low)} stroke={color} strokeWidth={1} />
               <rect x={cx - bodyW / 2} y={bodyTop} width={bodyW} height={bodyH} fill={color} />
             </g>

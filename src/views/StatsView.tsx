@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
-import { BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { useSim } from '../SimContext';
 import { panel, pageWrap } from '../ui';
+import { useContainerWidth } from '../components/useContainerWidth';
 import { AGENT_TYPE_COLORS, AGENT_TYPE_LABELS } from '../sim/agents';
 import type { AgentType } from '../sim/types';
 
@@ -75,19 +75,7 @@ export function StatsView() {
       {/* PnL by strategy */}
       <div style={{ ...panel, marginBottom: 16 }}>
         <h3 style={{ margin: '0 0 10px', fontSize: 15 }}>Profit &amp; loss by strategy — who's winning?</h3>
-        <div style={{ width: '100%', height: 200 }}>
-          <ResponsiveContainer>
-            <BarChart data={pnlData} margin={{ top: 8, right: 20, left: 8, bottom: 0 }}>
-              <XAxis dataKey="label" stroke="#888" tick={{ fontSize: 10 }} interval={0} />
-              <YAxis stroke="#888" tick={{ fontSize: 11 }} width={64} />
-              <ReferenceLine y={0} stroke="#555" />
-              <Tooltip contentStyle={{ background: '#1a1a2e', border: '1px solid #333', borderRadius: 6 }} labelStyle={{ color: '#aaa' }} cursor={{ fill: '#ffffff10' }} />
-              <Bar dataKey="pnl" isAnimationActive={false}>
-                {pnlData.map((d) => <Cell key={d.label} fill={d.pnl >= 0 ? '#4ade80' : '#f87171'} />)}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        <PnlBars data={pnlData} />
       </div>
 
       {/* Per-strategy table */}
@@ -144,6 +132,39 @@ function fmt(v: number): string {
   const abs = Math.abs(v);
   const s = abs >= 1000 ? `${(abs / 1000).toFixed(1)}k` : abs.toFixed(0);
   return `${v >= 0 ? '+' : '-'}$${s}`;
+}
+
+// Plain-SVG P&L-by-strategy bars (no charting lib), zero baseline in the middle.
+function PnlBars({ data }: { data: { label: string; pnl: number }[] }) {
+  const [ref, width] = useContainerWidth();
+  const H = 200;
+  const PAD_T = 8;
+  const PAD_B = 26;
+  const plotH = H - PAD_T - PAD_B;
+  const maxAbs = Math.max(1, ...data.map((d) => Math.abs(d.pnl)));
+  const zeroY = PAD_T + plotH / 2;
+  const slot = data.length ? width / data.length : width;
+  const bw = Math.min(slot * 0.6, 60);
+
+  return (
+    <div ref={ref} style={{ width: '100%', height: H }}>
+      <svg width={width} height={H}>
+        <line x1={0} y1={zeroY} x2={width} y2={zeroY} stroke="#555" />
+        {data.map((d, i) => {
+          const cx = slot * (i + 0.5);
+          const h = (Math.abs(d.pnl) / maxAbs) * (plotH / 2);
+          const up = d.pnl >= 0;
+          return (
+            <g key={d.label}>
+              <rect x={cx - bw / 2} y={up ? zeroY - h : zeroY} width={bw} height={h} fill={up ? '#4ade80' : '#f87171'} />
+              <text x={cx} y={zeroY + (up ? 14 : -6)} textAnchor="middle" fontSize={9} fill="#aaa">{d.label.split(' ')[0]}</text>
+              <text x={cx} y={up ? zeroY - h - 3 : zeroY + h + 12} textAnchor="middle" fontSize={9} fill={up ? '#4ade80' : '#f87171'}>{fmt(d.pnl)}</text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
 }
 
 function Tile({ label, value, color }: { label: string; value: string; color?: string }) {

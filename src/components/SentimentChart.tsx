@@ -1,32 +1,45 @@
-import { memo, useMemo } from 'react';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, CartesianGrid } from 'recharts';
+import { memo } from 'react';
 import type { SentimentPoint } from '../hooks/useSimulation';
+import { useContainerWidth } from './useContainerWidth';
 
 interface Props {
   series: SentimentPoint[];
 }
 
+const HEIGHT = 120;
+const PAD_L = 44;
+const PAD_R = 12;
+const PAD_T = 8;
+const PAD_B = 16;
+
+// Plain-SVG sentiment line with a zero baseline (no charting lib).
 export const SentimentChart = memo(function SentimentChart({ series }: Props) {
-  const bound = useMemo(() => {
-    const values = series.length ? series.map((p) => Math.abs(p.value)) : [0];
-    return Math.max(0.5, Math.ceil(Math.max(...values) * 10) / 10);
-  }, [series]);
+  const [ref, width] = useContainerWidth();
+  const plotW = Math.max(1, width - PAD_L - PAD_R);
+  const plotH = HEIGHT - PAD_T - PAD_B;
+
+  const vals = series.length ? series.map((p) => Math.abs(p.value)) : [0];
+  const bound = Math.max(0.5, Math.ceil(Math.max(...vals) * 10) / 10);
+
+  const x = (i: number) => PAD_L + (series.length <= 1 ? 0 : (i / (series.length - 1)) * plotW);
+  const y = (v: number) => PAD_T + (1 - (v + bound) / (2 * bound)) * plotH;
+
+  const points = series.map((p, i) => `${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(' ');
 
   return (
-    <div style={{ width: '100%', height: 120 }}>
-      <ResponsiveContainer>
-        <LineChart data={series} margin={{ top: 8, right: 20, left: 0, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#2a2a3a" />
-          <XAxis dataKey="index" stroke="#888" tick={{ fontSize: 11 }} />
-          <YAxis domain={[-bound, bound]} stroke="#888" tick={{ fontSize: 11 }} width={44} />
-          <ReferenceLine y={0} stroke="#555" />
-          <Tooltip
-            contentStyle={{ background: '#1a1a2e', border: '1px solid #333', borderRadius: 6 }}
-            labelStyle={{ color: '#aaa' }}
-          />
-          <Line type="monotone" dataKey="value" stroke="#34d399" strokeWidth={2} dot={false} isAnimationActive={false} />
-        </LineChart>
-      </ResponsiveContainer>
+    <div ref={ref} style={{ width: '100%', height: HEIGHT }}>
+      <svg width={width} height={HEIGHT}>
+        {[bound, 0, -bound].map((t, i) => {
+          const yy = y(t);
+          return (
+            <g key={i}>
+              <line x1={PAD_L} y1={yy} x2={width - PAD_R} y2={yy} stroke={t === 0 ? '#555' : '#2a2a3a'} strokeDasharray={t === 0 ? undefined : '3 3'} />
+              <text x={PAD_L - 6} y={yy + 3} textAnchor="end" fontSize={11} fill="#888">{t.toFixed(1)}</text>
+            </g>
+          );
+        })}
+        {series.length > 1 && <polyline points={points} fill="none" stroke="#34d399" strokeWidth={2} />}
+      </svg>
     </div>
   );
 });

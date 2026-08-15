@@ -1,37 +1,47 @@
-import { memo, useMemo } from 'react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { memo } from 'react';
 import type { VolumeBar } from '../sim/bars';
+import { useContainerWidth } from './useContainerWidth';
 
 interface Props {
   volumeBars: VolumeBar[];
 }
 
+const HEIGHT = 84;
+const PAD_L = 56;
+const PAD_R = 12;
+const PAD_B = 2;
+
+// Plain-SVG buy/sell volume bars (no charting lib).
 export const VolumeChart = memo(function VolumeChart({ volumeBars }: Props) {
-  const data = useMemo(() => volumeBars.map((b) => ({
-    index: b.index,
-    buy: Number(b.buy.toFixed(1)),
-    sell: Number(b.sell.toFixed(1)),
-  })), [volumeBars]);
+  const [ref, width] = useContainerWidth();
+  const plotW = Math.max(1, width - PAD_L - PAD_R);
+  const plotH = HEIGHT - PAD_B - 2;
+  const max = Math.max(1, ...volumeBars.map((b) => Math.max(b.buy, b.sell)));
+  const slot = plotW / Math.max(volumeBars.length, 1);
+  const bw = Math.max(1, Math.min(slot / 2 - 0.5, 8));
 
   return (
-    <div style={{ width: '100%', height: 84 }}>
+    <div style={{ width: '100%' }}>
       <div style={{ display: 'flex', gap: 14, fontSize: 11, color: '#888', marginBottom: 2 }}>
         <span><span style={{ color: '#4ade80' }}>■</span> buy volume</span>
         <span><span style={{ color: '#f87171' }}>■</span> sell volume</span>
       </div>
-      <ResponsiveContainer>
-        <BarChart data={data} margin={{ top: 4, right: 20, left: 0, bottom: 0 }} barGap={0} barCategoryGap="10%">
-          <XAxis dataKey="index" stroke="#888" tick={{ fontSize: 11 }} />
-          <YAxis stroke="#888" tick={{ fontSize: 11 }} width={56} />
-          <Tooltip
-            contentStyle={{ background: '#1a1a2e', border: '1px solid #333', borderRadius: 6 }}
-            labelStyle={{ color: '#aaa' }}
-            cursor={{ fill: '#ffffff10' }}
-          />
-          <Bar dataKey="buy" fill="#4ade80" isAnimationActive={false} />
-          <Bar dataKey="sell" fill="#f87171" isAnimationActive={false} />
-        </BarChart>
-      </ResponsiveContainer>
+      <div ref={ref} style={{ width: '100%', height: HEIGHT }}>
+        <svg width={width} height={HEIGHT}>
+          {volumeBars.map((b, i) => {
+            const cx = PAD_L + slot * (i + 0.5);
+            const buyH = (b.buy / max) * plotH;
+            const sellH = (b.sell / max) * plotH;
+            const base = HEIGHT - PAD_B;
+            return (
+              <g key={i}>
+                <rect x={cx - bw} y={base - buyH} width={bw} height={buyH} fill="#4ade80" />
+                <rect x={cx} y={base - sellH} width={bw} height={sellH} fill="#f87171" />
+              </g>
+            );
+          })}
+        </svg>
+      </div>
     </div>
   );
 });
