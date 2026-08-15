@@ -121,7 +121,6 @@ export interface ValueAgent extends AgentAccount {
   id: string;
   name: string;
   type: 'value';
-  fairValue: number; // fixed intrinsic-value anchor (does not track live price)
   marginOfSafety: number; // dead-band: min divergence from fair value before acting
   conviction: number; // order-size multiplier scaling with discount/premium
   contrarianGain: number; // how strongly negative sentiment raises buy willingness
@@ -213,4 +212,5 @@ export interface MarketState {
   priceHistory: number[];
   tick: number;
   sentiment: number; // current decaying market sentiment from recent news
+  fundamentalValue: number; // the "true" value, permanently repriced by news
 }

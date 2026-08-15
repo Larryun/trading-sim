@@ -66,6 +66,7 @@ export function useSimulation() {
   const [user, setUser] = useState<AgentAccount>(() => ({ ...engineRef.current.user }));
   const [floatBreakdown, setFloatBreakdown] = useState<FloatBreakdown>(() => floatOf(engineRef.current));
   const [sentiment, setSentiment] = useState(0);
+  const [fundamentalValue, setFundamentalValue] = useState(engineRef.current.fundamentalValue);
   const [autoNews, setAutoNews] = useState(false);
   const [lastUserFill, setLastUserFill] = useState<UserFill>(null);
   const [userOrders, setUserOrders] = useState<UserOrderRecord[]>([]);
@@ -112,6 +113,7 @@ export function useSimulation() {
     setUser({ ...engine.user });
     setFloatBreakdown(floatOf(engine));
     setSentiment(engine.sentiment);
+    setFundamentalValue(engine.fundamentalValue);
     setLastUserFill(engine.lastUserFill);
     setUserOrders([...engine.userOrders].slice(-50).reverse());
     setUserRestingOrders(engine.book.countOrdersByOwner('user'));
@@ -168,6 +170,7 @@ export function useSimulation() {
   const triggerEvent = (sentimentDelta: number) => {
     engineRef.current.triggerEvent(sentimentDelta);
     setSentiment(engineRef.current.sentiment);
+    setFundamentalValue(engineRef.current.fundamentalValue);
   };
 
   const toggleAutoNews = () => {
@@ -213,6 +216,7 @@ export function useSimulation() {
     setTickMs,
     user,
     currentPrice,
+    fundamentalValue,
     bestBid,
     bestAsk,
     unrealizedPnl,

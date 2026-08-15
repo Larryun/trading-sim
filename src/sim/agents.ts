@@ -48,9 +48,6 @@ export const AGENT_TYPE_COLORS: Record<AgentType, string> = {
   panicSeller: '#ef4444',
 };
 
-// Value agents anchor to a fixed fair value; keep this in sync with the engine's
-// STARTING_PRICE so a value agent added mid-run still leans against bubbles.
-const REFERENCE_PRICE = 100;
 // Minimum meaningful order size (mirrors the engine's own floor).
 const MIN_ORDER = 0.01;
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
@@ -94,7 +91,7 @@ export function createAgent(
       // A maker manages inventory via quote skew, so the shared TP/SL exit is off.
       return { id, name, type, spreadBps: 8, quoteSize: 100, inventorySkew: 0.5, activity: 0.8, bias: 0, takeProfit: 0, stopLoss: 0, ...account };
     case 'value':
-      return { id, name, type, fairValue: REFERENCE_PRICE, marginOfSafety: 0.1, conviction: 6, contrarianGain: 0.3, maxOrderShares: 400, activity: 0.15, bias: 0, takeProfit: 0, stopLoss: 0, ...account };
+      return { id, name, type, marginOfSafety: 0.1, conviction: 6, contrarianGain: 0.3, maxOrderShares: 400, activity: 0.15, bias: 0, takeProfit: 0, stopLoss: 0, ...account };
     case 'fomoHerd':
       return { id, name, type, shortWindow: 4, entryThreshold: 0.008, sentimentGain: 1, convexity: 2, maxBuyFrac: 0.4, activity: 0.5, bias: 0, takeProfit: 0.12, stopLoss: 0, ...account };
     case 'whale':
@@ -193,9 +190,10 @@ export function decideOrder(agent: Agent, market: MarketState): OrderIntent[] {
       ];
     }
     case 'value': {
-      // Anchor to a FIXED fair value; buy when cheap, sell when dear, and fade
-      // sentiment (buy panics / sell euphoria). Ignore trend inside the dead band.
-      const discount = (agent.fairValue - price) / agent.fairValue; // >0 = cheap
+      // Anchor to the evolving fundamental value (moved by news); buy when cheap,
+      // sell when dear, and fade sentiment. Ignore trend inside the dead band.
+      const fair = market.fundamentalValue;
+      const discount = (fair - price) / fair; // >0 = cheap vs fundamental
       const s = Math.max(-1, Math.min(1, market.sentiment));
       const eff = discount - agent.contrarianGain * s;
       if (eff > agent.marginOfSafety) {

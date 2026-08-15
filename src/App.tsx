@@ -92,8 +92,11 @@ export default function App() {
           <span style={{ width: 74, color: '#eee' }}>${sim.dividendPerShare.toFixed(2)}/sh</span>
         </label>
 
-        <div style={{ marginLeft: 'auto', fontSize: 20, fontWeight: 700, color: '#4ade80' }}>
-          ${sim.currentPrice.toFixed(2)}
+        <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
+          <div style={{ fontSize: 20, fontWeight: 700, color: '#4ade80' }}>${sim.currentPrice.toFixed(2)}</div>
+          <div style={{ fontSize: 11, color: '#22d3ee' }} title="Fundamental value — the 'true' value, moved permanently by news">
+            fair ${sim.fundamentalValue.toFixed(2)}
+          </div>
         </div>
       </div>
 
@@ -104,7 +107,9 @@ export default function App() {
 
       {/* Charts: price on top, buy/sell order flow below */}
       <div style={{ ...panel, marginBottom: 16 }}>
-        {sim.chartType === 'candle' ? <CandleChart bars={sim.bars} /> : <PriceChart bars={sim.bars} />}
+        {sim.chartType === 'candle'
+          ? <CandleChart bars={sim.bars} fundamental={sim.fundamentalValue} />
+          : <PriceChart bars={sim.bars} fundamental={sim.fundamentalValue} />}
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #2a2a3a' }}>
           <VolumeChart volumeBars={sim.volumeBars} />
         </div>

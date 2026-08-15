@@ -29,8 +29,7 @@ const PARAM_HELP: Record<string, string> = {
   'Half-spread': 'How far its bid/ask sit from mid on each side (basis points).',
   'Quote size': 'Shares quoted on each side of the book.',
   'Inventory skew': 'How strongly it shifts quotes to unwind excess inventory.',
-  'Fair value': 'The intrinsic price it believes the stock is worth.',
-  'Margin of safety': 'Required gap from fair value before it acts (a dead band).',
+  'Margin of safety': 'Required gap from the fundamental value before it acts (a dead band).',
   Conviction: 'How aggressively order size scales with the discount/premium.',
   'Contrarian gain': 'How much negative sentiment (panic) increases its buying.',
   'Signal window': 'Ticks used to detect an accelerating up-move.',
@@ -230,8 +229,6 @@ function AgentCard({
           )}
           {agent.type === 'value' && (
             <>
-              <Slider label="Fair value" value={agent.fairValue} min={50} max={200} step={1}
-                onChange={(v) => onUpdate({ fairValue: v })} format={(v) => `$${v.toFixed(0)}`} />
               <Slider label="Margin of safety" value={agent.marginOfSafety} min={0} max={0.4} step={0.01}
                 onChange={(v) => onUpdate({ marginOfSafety: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
               <Slider label="Conviction" value={agent.conviction} min={0} max={15} step={0.5}

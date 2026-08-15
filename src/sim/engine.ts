@@ -19,6 +19,9 @@ const MAX_TRADES = 500;
 
 const SENTIMENT_DECAY = 0.92;
 const AUTO_NEWS_PROB = 0.02;
+// A news event permanently reprices the fundamental by this fraction per unit of
+// its sentiment magnitude (transient sentiment decays; the fundamental shift stays).
+const FUNDAMENTAL_IMPACT = 0.03;
 
 // Dividends inject cash into the market from OUTSIDE the trading system (the
 // company paying shareholders), so the market isn't a closed, zero-sum cash pool.
@@ -57,6 +60,7 @@ export class SimulationEngine {
   };
 
   sentiment = 0;
+  fundamentalValue = STARTING_PRICE; // the "true" value; permanently moved by news
   events: NewsEvent[] = [];
   autoNews = false;
   private nextEventId = 1;
@@ -103,7 +107,9 @@ export class SimulationEngine {
     };
     this.events.push(event);
     if (this.events.length > 100) this.events = this.events.slice(-100);
+    // Transient reaction (decays) plus a permanent repricing of the fundamental.
     this.sentiment += sentiment;
+    this.fundamentalValue = Math.max(1, this.fundamentalValue * (1 + sentiment * FUNDAMENTAL_IMPACT));
     return event;
   }
 
@@ -173,7 +179,7 @@ export class SimulationEngine {
     if (Math.abs(this.sentiment) < 0.001) this.sentiment = 0;
 
     const priceWindow = this.priceRing.window(STRATEGY_WINDOW).data;
-    const market: MarketState = { priceHistory: priceWindow, tick: this.tick, sentiment: this.sentiment };
+    const market: MarketState = { priceHistory: priceWindow, tick: this.tick, sentiment: this.sentiment, fundamentalValue: this.fundamentalValue };
     const registry = this.buildRegistry();
     const tickTrades: Trade[] = [];
 

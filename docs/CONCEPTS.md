@@ -230,19 +230,27 @@ half in cash and half in shares, so they can trade either direction immediately.
 Real markets aren't a pure random walk because **information keeps arriving**.
 The sim models this as discrete **news events**.
 
-- Firing a news event injects a burst of **sentiment** — positive (bullish) or
-  negative (bearish) — accompanied by a headline.
-- Sentiment **decays** toward zero over the following ticks (each tick it shrinks
-  to a fraction of its previous value). So news drives a *burst* of directional
-  flow, not a permanent level shift — unless fresh news keeps arriving.
-- **News/informed agents react** to the standing sentiment, buying or selling in
-  its direction and thereby moving the price.
+Each news event has **two effects**, mirroring how real information works:
 
-**In the app:** use the "Good news" / "Bad news" buttons to inject sentiment
-manually, or toggle **Auto events** to have random headlines fire on their own.
-The sentiment chart shows the level rising on a shock and decaying back to zero
-between events. With no news agents present, news does little; add some and watch
-each headline translate into a price move.
+- A **transient sentiment** burst — positive (bullish) or negative (bearish) —
+  that **decays** toward zero over the following ticks. This is the short-term
+  *reaction/overreaction*: news/informed agents trade in its direction and momentum
+  piles on, so price often overshoots.
+- A **permanent shift in the fundamental value** — the "true" value of the stock.
+  A good-news event *reprices the company upward for good*, not just for a moment.
+  Over many events the fundamental follows a **random walk**, producing the lasting
+  trends real stocks show (rather than always reverting to one fixed number).
+
+**Value/fundamental agents anchor to this evolving fundamental** (not a fixed
+price): when price sits below it they accumulate, pulling the market back toward
+fair value; above it they sell. So the market oscillates *around a moving
+fundamental* — overreacting on the way, then converging.
+
+**In the app:** use "Good news" / "Bad news" to inject events manually, or toggle
+**Auto events** for random headlines. The sentiment chart shows the transient
+spike decaying to zero, while the **dashed "fair" line** on the price chart (and
+the `fair $…` readout) shows the fundamental stepping to its new level and price
+chasing it.
 
 ---
 
