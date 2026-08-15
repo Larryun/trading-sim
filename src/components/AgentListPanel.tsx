@@ -10,7 +10,7 @@ interface Props {
   updateAgentParams: (id: string, patch: Record<string, number>) => void;
 }
 
-const AGENT_TYPES: AgentType[] = ['noise', 'momentum', 'meanReversion', 'news', 'marketMaker', 'value', 'fomoHerd', 'whale', 'panicSeller'];
+const AGENT_TYPES: AgentType[] = ['noise', 'momentum', 'meanReversion', 'news', 'marketMaker', 'value', 'fomoHerd', 'whale', 'panicSeller', 'adaptive'];
 
 // Which types use the shared take-profit / stop-loss exit overlay.
 const USES_EXITS: AgentType[] = ['noise', 'momentum', 'meanReversion', 'news', 'fomoHerd'];
@@ -51,6 +51,7 @@ const PARAM_HELP: Record<string, string> = {
   'Re-entry (% cash)': 'Cash redeployed per tick when buying back the recovery.',
   Activity: 'Chance it evaluates and acts on a given tick (staggers order flow).',
   Mandate: 'Accumulate (buy up to the target) or distribute (sell down to it).',
+  'Learning rate': 'How fast it re-weights its signals toward whichever has been predicting returns.',
   'Take profit': 'Sell to lock in gains once up this % above average cost.',
   'Stop loss': 'Sell to cut losses once down this % below average cost.',
 };
@@ -305,6 +306,18 @@ function AgentCard({
                 onChange={(v) => onUpdate({ sentPanic: v })} format={(v) => v.toFixed(1)} />
               <Slider label="Re-entry (% cash)" value={agent.reentryFrac} min={0} max={1} step={0.05}
                 onChange={(v) => onUpdate({ reentryFrac: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
+              <Slider label="Activity" value={agent.activity} min={0} max={1} step={0.05}
+                onChange={(v) => onUpdate({ activity: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
+            </>
+          )}
+          {agent.type === 'adaptive' && (
+            <>
+              <Slider label="Signal window" value={agent.window} min={2} max={50} step={1}
+                onChange={(v) => onUpdate({ window: v })} format={(v) => `${v} ticks`} />
+              <Slider label="Conviction" value={agent.conviction} min={0} max={20} step={0.5}
+                onChange={(v) => onUpdate({ conviction: v })} format={(v) => v.toFixed(1)} />
+              <Slider label="Learning rate" value={agent.learningRate} min={0} max={2} step={0.05}
+                onChange={(v) => onUpdate({ learningRate: v })} format={(v) => v.toFixed(2)} />
               <Slider label="Activity" value={agent.activity} min={0} max={1} step={0.05}
                 onChange={(v) => onUpdate({ activity: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
             </>

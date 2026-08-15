@@ -47,6 +47,7 @@ export const AGENT_TYPE_LABELS: Record<AgentType, string> = {
   fomoHerd: 'FOMO herd',
   whale: 'Institution / whale',
   panicSeller: 'Panic seller',
+  adaptive: 'Adaptive / learner',
 };
 
 export const AGENT_TYPE_COLORS: Record<AgentType, string> = {
@@ -59,7 +60,21 @@ export const AGENT_TYPE_COLORS: Record<AgentType, string> = {
   fomoHerd: '#d946ef',
   whale: '#94a3b8',
   panicSeller: '#ef4444',
+  adaptive: '#fb7185',
 };
+
+/** Signals the adaptive agent blends, each normalized to ~[-1,1] (+ = bullish). */
+export function adaptiveSignals(agent: { window: number }, market: MarketState, price: number): number[] {
+  const clamp = (x: number) => Math.max(-1, Math.min(1, x));
+  const fair = market.fundamentalValue;
+  const value = clamp(fair > 0 ? ((fair - price) / fair) * 10 : 0); // cheap vs fair = bullish
+  const momentum = clamp(pctChange(market.priceHistory, agent.window) * 50);
+  const ma = movingAverage(market.priceHistory, agent.window);
+  const meanRev = clamp(ma > 0 ? (-(price - ma) / ma) * 10 : 0); // above MA = bearish
+  const sentiment = clamp(market.sentiment / 2);
+  return [value, momentum, meanRev, sentiment];
+}
+export const ADAPTIVE_SIGNAL_NAMES = ['value', 'momentum', 'mean-rev', 'sentiment'];
 
 // Minimum meaningful order size (mirrors the engine's own floor).
 const MIN_ORDER = 0.01;
@@ -124,6 +139,12 @@ export function createAgent(
       };
     case 'panicSeller':
       return { id, name, type, peakWindow: 15, panicThreshold: 0.06, capitulationDD: 0.15, baseDumpFrac: 0.4, sentPanic: 0.6, reentryFrac: 0.3, activity: 0.7, takeProfit: 0, stopLoss: 0, ...account };
+    case 'adaptive':
+      // Starts trusting all four signals equally, then learns which work.
+      return {
+        id, name, type, window: 10, conviction: 8, learningRate: 0.5, activity: 0.6, takeProfit: 0, stopLoss: 0,
+        weights: [0.25, 0.25, 0.25, 0.25], lastSignals: [], lastPrice: 0, smoothScore: 0, ...account,
+      };
   }
 }
 
@@ -280,6 +301,39 @@ export function decideOrder(agent: Agent, market: MarketState): OrderIntent[] {
       }
       return [];
     }
+    case 'adaptive': {
+      const sig = adaptiveSignals(agent, market, price);
+      // Learn: reward each signal that predicted the return since the last decision,
+      // and re-weight multiplicatively (Hedge / multiplicative-weights) toward winners.
+      if (agent.lastPrice > 0 && agent.lastSignals.length === 4) {
+        const r = (price - agent.lastPrice) / agent.lastPrice;
+        let sum = 0;
+        for (let i = 0; i < 4; i++) {
+          agent.weights[i] *= Math.exp(agent.learningRate * agent.lastSignals[i] * r * 20);
+          agent.weights[i] = Math.max(0.02, agent.weights[i]); // floor so a signal can recover
+          sum += agent.weights[i];
+        }
+        for (let i = 0; i < 4; i++) agent.weights[i] /= sum; // renormalize to sum 1
+      }
+      agent.lastSignals = sig;
+      agent.lastPrice = price;
+
+      const score = sig.reduce((s, v, i) => s + agent.weights[i] * v, 0);
+      // Smooth the score so a noisy tick doesn't flip the target — trade on the view,
+      // not the jitter.
+      agent.smoothScore = 0.85 * agent.smoothScore + 0.15 * score;
+
+      // Hold a TARGET exposure proportional to conviction × smoothed score (capped at
+      // ±100% of equity), and rebalance only when the position drifts meaningfully off
+      // it — so a stable view means little trading (no fee bleed), a flip means it reverses.
+      const equity = agent.cash + agent.shares * price;
+      const targetExposure = Math.max(-1, Math.min(1, agent.conviction * agent.smoothScore * 0.15));
+      const desired = price > 0 ? (targetExposure * equity) / price : 0;
+      const delta = desired - agent.shares;
+      const band = Math.max(equity * 0.1 / Math.max(price, 1), 1); // ~10%-of-equity deadband
+      if (Math.abs(delta) < band) return [];
+      return [{ side: delta > 0 ? 'buy' : 'sell', size: Math.abs(delta) }];
+    }
   }
 }
 
@@ -429,6 +483,23 @@ export function explainDecision(agent: Agent, market: MarketState): DecisionExpl
         ],
         verdict: 'quote',
         detail: `Posts ${agent.levels} levels × ${agent.quoteSize} sh each side around $${price.toFixed(2)}, skewing to unwind inventory.`,
+      };
+    }
+    case 'adaptive': {
+      const sig = adaptiveSignals(agent, market, price);
+      const score = sig.reduce((s, v, i) => s + (agent.weights[i] ?? 0.25) * v, 0);
+      const v: Verdict = Math.abs(score) <= 0.05 ? 'hold' : score > 0 ? 'buy' : 'sell';
+      const signals: DecisionSignal[] = agent.weights.map((w, i) => ({
+        label: `${ADAPTIVE_SIGNAL_NAMES[i]} weight`,
+        value: `${(w * 100).toFixed(0)}%`,
+        lean: sig[i] > 0.02 ? 1 : sig[i] < -0.02 ? -1 : 0,
+      }));
+      signals.push({ label: 'Blended score', value: score.toFixed(2), lean: score > 0 ? 1 : score < 0 ? -1 : 0 });
+      return {
+        rule: 'Blends value/momentum/mean-reversion/sentiment and LEARNS which to trust — up-weighting whichever has been predicting returns.',
+        signals,
+        verdict: v,
+        detail: v === 'hold' ? 'Blended score is below its trade threshold — waits.' : `Weighted score → ${v}. The weights adapt each tick, so it favors trend in trending regimes and value/mean-reversion in choppy ones.`,
       };
     }
   }

@@ -35,6 +35,8 @@ function createEngine(): SimulationEngine {
   engine.addAgent('panicSeller', 40000);
   engine.addAgent('panicSeller', 40000);
   engine.addAgent('news', 40000);
+  engine.addAgent('adaptive', 100000); // a learning multi-signal trader
+
   // Not seeded by default (they fight fundamental tracking / are situational):
   // mean-reversion, FOMO herd, whale — all available from the Add dropdown.
   return engine;

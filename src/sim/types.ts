@@ -9,7 +9,8 @@ export type AgentType =
   | 'value'
   | 'fomoHerd'
   | 'whale'
-  | 'panicSeller';
+  | 'panicSeller'
+  | 'adaptive';
 
 /** What an agent wants to do this tick. A `limitPrice` makes it a resting limit order. */
 export interface OrderIntent {
@@ -174,6 +175,23 @@ export interface PanicSellerAgent extends AgentAccount {
   stopLoss: number; // 0
 }
 
+/** Adaptive "AI" trader: blends multiple signals and learns which to trust (online weights). */
+export interface AdaptiveAgent extends AgentAccount {
+  id: string;
+  name: string;
+  type: 'adaptive';
+  window: number; // lookback for the momentum / moving-average signals
+  conviction: number; // order-size multiplier on the blended score
+  learningRate: number; // how fast signal weights adapt to recent performance
+  activity: number;
+  takeProfit: number; // 0 (signal-driven, flips on its own)
+  stopLoss: number; // 0
+  weights: number[]; // live weights for [value, momentum, meanRev, sentiment]
+  lastSignals: number[]; // signal snapshot from its previous decision
+  lastPrice: number; // price at its previous decision (to score the signals)
+  smoothScore: number; // EMA of the blended score, so it doesn't churn on noise
+}
+
 export type Agent =
   | NoiseAgent
   | MomentumAgent
@@ -183,7 +201,8 @@ export type Agent =
   | ValueAgent
   | FomoHerdAgent
   | WhaleAgent
-  | PanicSellerAgent;
+  | PanicSellerAgent
+  | AdaptiveAgent;
 
 /** A record of one executed user order, for the order-history view. */
 export interface UserOrderRecord {

@@ -29,7 +29,7 @@ const FUNDAMENTAL_DIFFUSION = 0.06;
 // Short selling: bearish "view" traders can borrow & sell (shares go negative),
 // collateralized by their cash. If a rising price wipes out that collateral they
 // get margin-called and forced to buy back — the fuel for short squeezes.
-const CAN_SHORT = new Set<AgentType>(['value', 'meanReversion', 'momentum', 'news']);
+const CAN_SHORT = new Set<AgentType>(['value', 'meanReversion', 'momentum', 'news', 'adaptive']);
 const SHORT_COLLATERAL = 1; // may short up to this * cash worth of shares
 const MAINT_MARGIN = 0.25; // margin call when equity falls below this * short exposure
 // Sentiment realism: beyond discrete news jumps, the "mood" also reacts to recent
@@ -100,7 +100,7 @@ export class SimulationEngine {
   totalFeesPaid = 0;
 
   private nextAgentNum: Record<AgentType, number> = {
-    noise: 0, momentum: 0, meanReversion: 0, news: 0, marketMaker: 0, value: 0, fomoHerd: 0, whale: 0, panicSeller: 0,
+    noise: 0, momentum: 0, meanReversion: 0, news: 0, marketMaker: 0, value: 0, fomoHerd: 0, whale: 0, panicSeller: 0, adaptive: 0,
   };
   private nextAgentId = 1;
 
