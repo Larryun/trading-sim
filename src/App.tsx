@@ -92,6 +92,13 @@ export default function App() {
           <span style={{ width: 74, color: '#eee' }}>${sim.dividendPerShare.toFixed(2)}/sh</span>
         </label>
 
+        <label style={{ fontSize: 13, color: '#bbb', display: 'flex', alignItems: 'center', gap: 8 }} title="Fee the taker pays per trade (goes to the broker, leaves the market)">
+          Fee
+          <input type="range" min={0} max={50} step={1} value={sim.feeBps}
+            onChange={(e) => sim.setFeeBps(Number(e.target.value))} />
+          <span style={{ width: 56, color: '#eee' }}>{sim.feeBps} bps</span>
+        </label>
+
         <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
           <div style={{ fontSize: 20, fontWeight: 700, color: '#4ade80' }}>${sim.currentPrice.toFixed(2)}</div>
           <div style={{ fontSize: 11, color: '#22d3ee' }} title="Fundamental value — the 'true' value, moved permanently by news">

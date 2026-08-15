@@ -160,8 +160,9 @@ money flows in from outside. The sim models this with **dividends** — every 50
 ticks the "company" pays cash per share held to every owner, injecting fresh money
 (a stock's fundamental value is, after all, the present value of its future
 dividends). Turn the **Dividend** control up and holders keep getting buying power;
-set it to zero for a closed, zero-sum cash pool. This inflow also offsets the cash
-that leaks out to transaction fees (section 9a).
+set it to zero for a closed, zero-sum cash pool. This inflow is the mirror image of
+transaction fees, which drain cash out of the market (see *Transaction costs* in
+section 8).
 
 ---
 
@@ -275,6 +276,22 @@ and some **shares**. Orders are constrained by that account.
 **In the app:** the trade panel shows your cash, shares, average cost, equity,
 and unrealized PnL; the order-history view logs each executed order with its
 average fill price and any realized gain.
+
+### Transaction costs (fees)
+
+Trading isn't free. Every fill charges the **taker** (whoever crossed the spread
+to trade *now*) a fee, set by the **Fee** control in basis points of the trade's
+value. Crucially, that cash **leaves the market entirely** — it goes to the
+broker/exchange, it is *not* paid to the other side. So fees are a steady **drain**
+on total participant cash (the mirror image of dividends, which are an inflow).
+
+This has real consequences you can watch:
+- **Takers pay, makers don't.** Market makers post resting quotes (they're the
+  passive side), so they avoid the taker fee and keep earning the spread — which is
+  exactly why liquidity provision is a viable business.
+- **Overtrading bleeds.** Crank the fee up and the high-churn agents (noise, and
+  anything that flips often) slowly lose to costs, while patient strategies suffer
+  less. Turn it to zero for a frictionless market.
 
 ---
 

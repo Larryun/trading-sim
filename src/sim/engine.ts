@@ -69,6 +69,11 @@ export class SimulationEngine {
   dividendPerShare = 0.1;
   totalDividendsPaid = 0;
 
+  // Transaction cost: the taker (aggressor) pays this fraction of notional on every
+  // fill. It leaves the participant system entirely (goes to the broker/exchange).
+  feeBps = 5;
+  totalFeesPaid = 0;
+
   private nextAgentNum: Record<AgentType, number> = {
     noise: 0, momentum: 0, meanReversion: 0, news: 0, marketMaker: 0, value: 0, fomoHerd: 0, whale: 0, panicSeller: 0,
   };
@@ -155,6 +160,17 @@ export class SimulationEngine {
     const seller = reg.get(trade.sellerId);
     if (buyer) applyBuy(buyer, trade.price, trade.size);
     if (seller) applySell(seller, trade.price, trade.size);
+
+    // The taker (whoever crossed the spread) pays a fee to the broker/exchange.
+    // This cash leaves the participant system — it is NOT paid to anyone here.
+    if (this.feeBps > 0) {
+      const taker = reg.get(trade.side === 'buy' ? trade.buyerId : trade.sellerId);
+      if (taker) {
+        const fee = trade.price * trade.size * (this.feeBps / 10000);
+        taker.cash -= fee;
+        this.totalFeesPaid += fee;
+      }
+    }
   }
 
   step(): Trade[] {
