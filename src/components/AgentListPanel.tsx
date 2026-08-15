@@ -1,0 +1,354 @@
+import { useState } from 'react';
+import type { Agent, AgentType } from '../sim/types';
+import { AGENT_TYPE_COLORS, AGENT_TYPE_LABELS } from '../sim/agents';
+
+interface Props {
+  agents: Agent[];
+  currentPrice: number;
+  addAgent: (type: AgentType, capital: number) => void;
+  removeAgent: (id: string) => void;
+  updateAgentParams: (id: string, patch: Record<string, number>) => void;
+}
+
+const AGENT_TYPES: AgentType[] = ['noise', 'momentum', 'meanReversion', 'news', 'marketMaker', 'value', 'fomoHerd', 'whale', 'panicSeller'];
+
+// Which types actually read the shared knobs (used to hide irrelevant sliders).
+const USES_BIAS: AgentType[] = ['noise', 'momentum', 'meanReversion', 'news', 'marketMaker', 'whale'];
+const USES_EXITS: AgentType[] = ['noise', 'momentum', 'meanReversion', 'news', 'fomoHerd'];
+
+// Hover help for each parameter, keyed by its slider label.
+const PARAM_HELP: Record<string, string> = {
+  'Trade frequency': 'Chance this agent places a random order each tick.',
+  'Max order size': 'Largest single order, in shares.',
+  'Lookback window': 'How many ticks back the trend is measured over.',
+  Sensitivity: "How aggressively order size scales with the trend's strength.",
+  'MA window': 'Ticks used for the moving average it reverts toward.',
+  Threshold: 'How far price must deviate from the average before it trades.',
+  Strength: 'How aggressively order size scales with the deviation.',
+  'Order size': 'Base shares per order, scaled by how strong sentiment is.',
+  'Half-spread': 'How far its bid/ask sit from mid on each side (basis points).',
+  'Quote size': 'Shares quoted on each side of the book.',
+  'Inventory skew': 'How strongly it shifts quotes to unwind excess inventory.',
+  'Fair value': 'The intrinsic price it believes the stock is worth.',
+  'Margin of safety': 'Required gap from fair value before it acts (a dead band).',
+  Conviction: 'How aggressively order size scales with the discount/premium.',
+  'Contrarian gain': 'How much negative sentiment (panic) increases its buying.',
+  'Signal window': 'Ticks used to detect an accelerating up-move.',
+  'Entry threshold': 'Minimum recent run-up needed before it chases.',
+  'Sentiment gain': 'How much positive sentiment amplifies its buying.',
+  Convexity: 'How much harder it buys as the rally gets more extended.',
+  'Max buy (% cash)': 'Most of its remaining cash it will deploy in one buy.',
+  'Target shares': 'Inventory it works toward (accumulate up to / distribute down to).',
+  'Slice size': 'Base child-order size per tick — splits the program to hide impact.',
+  'Participation jitter': 'Random variation on slice size to mask its footprint.',
+  'Impact budget': 'Adverse recent move that makes it pause to limit its own impact.',
+  'Peak window': 'Ticks used to track the recent high for drawdown.',
+  'Panic threshold': 'Drawdown from the peak that triggers selling.',
+  Capitulation: 'Drawdown at which it dumps nearly everything.',
+  'Base dump': 'Fraction of holdings sold when panic first triggers.',
+  'Fear trigger': 'Negative-sentiment level that triggers selling on its own.',
+  'Re-entry (% cash)': 'Cash redeployed per tick when buying back the recovery.',
+  Activity: 'Chance it evaluates and acts on a given tick (staggers order flow).',
+  'Bias (sell ↔ buy)': 'Directional lean on its decisions: left = sell more, right = buy more.',
+  'Mandate (distrib ↔ accum)': 'Whale program direction: left = distribute (sell), right = accumulate (buy).',
+  'Take profit': 'Sell to lock in gains once up this % above average cost.',
+  'Stop loss': 'Sell to cut losses once down this % below average cost.',
+};
+
+export function AgentListPanel({ agents, currentPrice, addAgent, removeAgent, updateAgentParams }: Props) {
+  const [newType, setNewType] = useState<AgentType>('noise');
+  const [capital, setCapital] = useState(20000);
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, gap: 12, flexWrap: 'wrap' }}>
+        <h3 style={{ margin: 0, fontSize: 15 }}>Agents ({agents.length})</h3>
+
+        {/* Add-agent controls */}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <select
+            value={newType}
+            onChange={(e) => setNewType(e.target.value as AgentType)}
+            style={{ background: '#0f0f1e', color: '#eee', border: '1px solid #333', borderRadius: 6, padding: '6px 8px', fontSize: 13 }}
+          >
+            {AGENT_TYPES.map((t) => (
+              <option key={t} value={t}>{AGENT_TYPE_LABELS[t]}</option>
+            ))}
+          </select>
+          <label style={{ fontSize: 12, color: '#888', display: 'flex', alignItems: 'center', gap: 4 }}>
+            $
+            <input
+              type="number"
+              min={1000}
+              step={1000}
+              value={capital}
+              onChange={(e) => setCapital(Math.max(0, Number(e.target.value)))}
+              style={{ width: 84, background: '#0f0f1e', color: '#eee', border: '1px solid #333', borderRadius: 6, padding: '6px 8px' }}
+            />
+          </label>
+          <button
+            onClick={() => addAgent(newType, capital)}
+            style={{ background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, padding: '7px 14px', fontWeight: 600, cursor: 'pointer' }}
+          >
+            + Add
+          </button>
+        </div>
+      </div>
+
+      {agents.length === 0 && <div style={{ color: '#666', fontSize: 13 }}>No agents. Add one above.</div>}
+
+      {/* Grouped by type */}
+      {AGENT_TYPES.map((type) => {
+        const group = agents.filter((a) => a.type === type);
+        if (group.length === 0) return null;
+        const color = AGENT_TYPE_COLORS[type];
+        return (
+          <div key={type} style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <span style={{ width: 9, height: 9, borderRadius: '50%', background: color, display: 'inline-block' }} />
+              <span style={{ fontWeight: 600, fontSize: 13, color }}>{AGENT_TYPE_LABELS[type]}</span>
+              <span style={{ fontSize: 12, color: '#666' }}>({group.length})</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 8 }}>
+              {group.map((agent) => (
+                <AgentCard
+                  key={agent.id}
+                  agent={agent}
+                  currentPrice={currentPrice}
+                  onRemove={() => removeAgent(agent.id)}
+                  onUpdate={(patch) => updateAgentParams(agent.id, patch)}
+                />
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function AgentCard({
+  agent,
+  currentPrice,
+  onRemove,
+  onUpdate,
+}: {
+  agent: Agent;
+  currentPrice: number;
+  onRemove: () => void;
+  onUpdate: (patch: Record<string, number>) => void;
+}) {
+  const [showParams, setShowParams] = useState(false);
+
+  const unrealized = agent.shares * (currentPrice - agent.avgCost);
+  const equity = agent.cash + agent.shares * currentPrice;
+  const totalPnl = equity - agent.startingCapital;
+
+  return (
+    <div style={{ background: '#16162a', border: '1px solid #2a2a3a', borderRadius: 7, padding: '8px 10px', fontSize: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+        <span style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{agent.name}</span>
+        {/* Realized gain is the objective, so it leads the card. */}
+        <span style={{ marginLeft: 'auto', color: agent.realizedPnl >= 0 ? '#4ade80' : '#f87171', fontWeight: 600 }}>
+          {fmtSigned(agent.realizedPnl)}
+        </span>
+        <button
+          onClick={() => setShowParams((s) => !s)}
+          style={{ background: 'transparent', border: '1px solid #333', color: '#aaa', borderRadius: 4, fontSize: 10, padding: '1px 6px', cursor: 'pointer' }}
+        >
+          {showParams ? '–' : '⚙'}
+        </button>
+        <button
+          onClick={onRemove}
+          style={{ background: 'transparent', border: '1px solid #533', color: '#f87171', borderRadius: 4, fontSize: 12, padding: '1px 6px', cursor: 'pointer', lineHeight: 1 }}
+          title="Remove agent"
+        >
+          ×
+        </button>
+      </div>
+
+      {/* Compact stats: fixed 2-column grid so nothing wraps raggedly */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 12px', color: '#999' }}>
+        <Metric label="sh" value={agent.shares.toFixed(0)} />
+        <Metric label="eq" value={`$${(equity / 1000).toFixed(1)}k`} />
+        <Metric label="unrl" value={fmtSigned(unrealized)} color={pnlColor(unrealized)} />
+        <Metric label="tot" value={fmtSigned(totalPnl)} color={pnlColor(totalPnl)} />
+        <Metric label="tr" value={String(agent.tradeCount)} />
+      </div>
+
+      {showParams && (
+        <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #2a2a3a' }}>
+          {agent.type === 'noise' && (
+            <>
+              <Slider label="Trade frequency" value={agent.frequency} min={0} max={1} step={0.01}
+                onChange={(v) => onUpdate({ frequency: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
+              <Slider label="Max order size" value={agent.maxSize} min={1} max={100} step={1}
+                onChange={(v) => onUpdate({ maxSize: v })} />
+            </>
+          )}
+          {agent.type === 'momentum' && (
+            <>
+              <Slider label="Lookback window" value={agent.window} min={2} max={50} step={1}
+                onChange={(v) => onUpdate({ window: v })} format={(v) => `${v} ticks`} />
+              <Slider label="Sensitivity" value={agent.sensitivity} min={0} max={20} step={0.5}
+                onChange={(v) => onUpdate({ sensitivity: v })} format={(v) => v.toFixed(1)} />
+              <Slider label="Activity" value={agent.activity} min={0} max={1} step={0.05}
+                onChange={(v) => onUpdate({ activity: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
+            </>
+          )}
+          {agent.type === 'meanReversion' && (
+            <>
+              <Slider label="MA window" value={agent.window} min={2} max={50} step={1}
+                onChange={(v) => onUpdate({ window: v })} format={(v) => `${v} ticks`} />
+              <Slider label="Threshold" value={agent.threshold} min={0} max={0.1} step={0.005}
+                onChange={(v) => onUpdate({ threshold: v })} format={(v) => `${(v * 100).toFixed(1)}%`} />
+              <Slider label="Strength" value={agent.strength} min={0} max={20} step={0.5}
+                onChange={(v) => onUpdate({ strength: v })} format={(v) => v.toFixed(1)} />
+              <Slider label="Activity" value={agent.activity} min={0} max={1} step={0.05}
+                onChange={(v) => onUpdate({ activity: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
+            </>
+          )}
+          {agent.type === 'news' && (
+            <>
+              <Slider label="Order size" value={agent.orderSize} min={0} max={2000} step={50}
+                onChange={(v) => onUpdate({ orderSize: v })} format={(v) => `${v.toFixed(0)} sh`} />
+              <Slider label="Activity" value={agent.activity} min={0} max={1} step={0.05}
+                onChange={(v) => onUpdate({ activity: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
+            </>
+          )}
+          {agent.type === 'marketMaker' && (
+            <>
+              <Slider label="Half-spread" value={agent.spreadBps} min={1} max={100} step={1}
+                onChange={(v) => onUpdate({ spreadBps: v })} format={(v) => `${v} bps`} />
+              <Slider label="Quote size" value={agent.quoteSize} min={10} max={1000} step={10}
+                onChange={(v) => onUpdate({ quoteSize: v })} format={(v) => `${v.toFixed(0)} sh`} />
+              <Slider label="Inventory skew" value={agent.inventorySkew} min={0} max={1} step={0.05}
+                onChange={(v) => onUpdate({ inventorySkew: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
+              <Slider label="Activity" value={agent.activity} min={0} max={1} step={0.05}
+                onChange={(v) => onUpdate({ activity: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
+            </>
+          )}
+          {agent.type === 'value' && (
+            <>
+              <Slider label="Fair value" value={agent.fairValue} min={50} max={200} step={1}
+                onChange={(v) => onUpdate({ fairValue: v })} format={(v) => `$${v.toFixed(0)}`} />
+              <Slider label="Margin of safety" value={agent.marginOfSafety} min={0} max={0.4} step={0.01}
+                onChange={(v) => onUpdate({ marginOfSafety: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
+              <Slider label="Conviction" value={agent.conviction} min={0} max={15} step={0.5}
+                onChange={(v) => onUpdate({ conviction: v })} format={(v) => v.toFixed(1)} />
+              <Slider label="Contrarian gain" value={agent.contrarianGain} min={0} max={1} step={0.05}
+                onChange={(v) => onUpdate({ contrarianGain: v })} format={(v) => v.toFixed(2)} />
+              <Slider label="Max order size" value={agent.maxOrderShares} min={50} max={1500} step={50}
+                onChange={(v) => onUpdate({ maxOrderShares: v })} format={(v) => `${v.toFixed(0)} sh`} />
+              <Slider label="Activity" value={agent.activity} min={0} max={1} step={0.05}
+                onChange={(v) => onUpdate({ activity: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
+            </>
+          )}
+          {agent.type === 'fomoHerd' && (
+            <>
+              <Slider label="Signal window" value={agent.shortWindow} min={2} max={10} step={1}
+                onChange={(v) => onUpdate({ shortWindow: v })} format={(v) => `${v} ticks`} />
+              <Slider label="Entry threshold" value={agent.entryThreshold} min={0} max={0.03} step={0.001}
+                onChange={(v) => onUpdate({ entryThreshold: v })} format={(v) => `${(v * 100).toFixed(1)}%`} />
+              <Slider label="Sentiment gain" value={agent.sentimentGain} min={0} max={3} step={0.1}
+                onChange={(v) => onUpdate({ sentimentGain: v })} format={(v) => v.toFixed(1)} />
+              <Slider label="Convexity" value={agent.convexity} min={1} max={3} step={0.1}
+                onChange={(v) => onUpdate({ convexity: v })} format={(v) => v.toFixed(1)} />
+              <Slider label="Max buy (% cash)" value={agent.maxBuyFrac} min={0.05} max={0.8} step={0.05}
+                onChange={(v) => onUpdate({ maxBuyFrac: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
+              <Slider label="Activity" value={agent.activity} min={0} max={1} step={0.05}
+                onChange={(v) => onUpdate({ activity: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
+            </>
+          )}
+          {agent.type === 'whale' && (
+            <>
+              <Slider label="Target shares" value={agent.targetShares} min={0} max={20000} step={100}
+                onChange={(v) => onUpdate({ targetShares: v })} format={(v) => `${v.toFixed(0)} sh`} />
+              <Slider label="Slice size" value={agent.sliceSize} min={5} max={500} step={5}
+                onChange={(v) => onUpdate({ sliceSize: v })} format={(v) => `${v.toFixed(0)} sh`} />
+              <Slider label="Participation jitter" value={agent.participationJitter} min={0} max={1} step={0.05}
+                onChange={(v) => onUpdate({ participationJitter: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
+              <Slider label="Impact budget" value={agent.impactBudget} min={0} max={0.05} step={0.001}
+                onChange={(v) => onUpdate({ impactBudget: v })} format={(v) => `${(v * 100).toFixed(1)}%`} />
+              <Slider label="Activity" value={agent.activity} min={0} max={1} step={0.05}
+                onChange={(v) => onUpdate({ activity: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
+            </>
+          )}
+          {agent.type === 'panicSeller' && (
+            <>
+              <Slider label="Peak window" value={agent.peakWindow} min={3} max={50} step={1}
+                onChange={(v) => onUpdate({ peakWindow: v })} format={(v) => `${v} ticks`} />
+              <Slider label="Panic threshold" value={agent.panicThreshold} min={0.01} max={0.3} step={0.01}
+                onChange={(v) => onUpdate({ panicThreshold: v })} format={(v) => `-${(v * 100).toFixed(0)}%`} />
+              <Slider label="Capitulation" value={agent.capitulationDD} min={0.05} max={0.5} step={0.01}
+                onChange={(v) => onUpdate({ capitulationDD: v })} format={(v) => `-${(v * 100).toFixed(0)}%`} />
+              <Slider label="Base dump" value={agent.baseDumpFrac} min={0.05} max={1} step={0.05}
+                onChange={(v) => onUpdate({ baseDumpFrac: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
+              <Slider label="Fear trigger" value={agent.sentPanic} min={0.1} max={2} step={0.1}
+                onChange={(v) => onUpdate({ sentPanic: v })} format={(v) => v.toFixed(1)} />
+              <Slider label="Re-entry (% cash)" value={agent.reentryFrac} min={0} max={1} step={0.05}
+                onChange={(v) => onUpdate({ reentryFrac: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
+              <Slider label="Activity" value={agent.activity} min={0} max={1} step={0.05}
+                onChange={(v) => onUpdate({ activity: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
+            </>
+          )}
+          {/* Bias — shown only for types that read it (whale reads it as a mandate). */}
+          {USES_BIAS.includes(agent.type) && (
+            <Slider
+              label={agent.type === 'whale' ? 'Mandate (distrib ↔ accum)' : 'Bias (sell ↔ buy)'}
+              value={agent.bias} min={-1} max={1} step={0.05}
+              onChange={(v) => onUpdate({ bias: v })}
+              format={(v) => (v === 0 ? 'neutral' : `${v > 0 ? '+' : ''}${(v * 100).toFixed(0)}%`)} />
+          )}
+          {/* Take-profit / stop-loss — only for types that use the shared exit overlay. */}
+          {USES_EXITS.includes(agent.type) && (
+            <>
+              <Slider label="Take profit" value={agent.takeProfit} min={0} max={0.5} step={0.01}
+                onChange={(v) => onUpdate({ takeProfit: v })} format={(v) => (v === 0 ? 'off' : `+${(v * 100).toFixed(0)}%`)} />
+              <Slider label="Stop loss" value={agent.stopLoss} min={0} max={0.5} step={0.01}
+                onChange={(v) => onUpdate({ stopLoss: v })} format={(v) => (v === 0 ? 'off' : `-${(v * 100).toFixed(0)}%`)} />
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Metric({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <span style={{ display: 'flex', justifyContent: 'space-between', gap: 6, whiteSpace: 'nowrap', overflow: 'hidden' }}>
+      <span style={{ color: '#666' }}>{label}</span>
+      <span style={{ color: color ?? '#ddd', fontVariantNumeric: 'tabular-nums', textOverflow: 'ellipsis', overflow: 'hidden' }}>{value}</span>
+    </span>
+  );
+}
+
+function Slider({
+  label, value, min, max, step, onChange, format,
+}: {
+  label: string; value: number; min: number; max: number; step: number;
+  onChange: (v: number) => void; format?: (v: number) => string;
+}) {
+  const help = PARAM_HELP[label];
+  return (
+    <label style={{ display: 'block', marginBottom: 6, fontSize: 11 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2, color: '#bbb' }}>
+        {help ? <span className="param-tip" data-tip={help}>{label}</span> : <span>{label}</span>}
+        <span style={{ color: '#eee' }}>{format ? format(value) : value}</span>
+      </div>
+      <input type="range" min={min} max={max} step={step} value={value}
+        onChange={(e) => onChange(Number(e.target.value))} style={{ width: '100%' }} />
+    </label>
+  );
+}
+
+function fmtSigned(v: number): string {
+  const abs = Math.abs(v);
+  const s = abs >= 1000 ? `${(abs / 1000).toFixed(1)}k` : abs.toFixed(0);
+  return `${v >= 0 ? '+' : '-'}$${s}`;
+}
+
+function pnlColor(v: number): string {
+  return v >= 0 ? '#4ade80' : '#f87171';
+}

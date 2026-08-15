@@ -1,0 +1,43 @@
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #0b0b16;
+  color: #e5e5e5;
+}
+
+input[type='range'] {
+  accent-color: #4ade80;
+}
+
+/* Custom hover tooltip for parameter labels (native title is slow/unreliable). */
+.param-tip {
+  position: relative;
+  cursor: help;
+  border-bottom: 1px dotted #667;
+}
+.param-tip:hover::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 5px);
+  width: max-content;
+  max-width: 240px;
+  white-space: normal;
+  background: #0b0b16;
+  color: #ddd;
+  border: 1px solid #3a3a4a;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 11px;
+  line-height: 1.35;
+  z-index: 100;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
