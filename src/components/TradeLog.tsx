@@ -36,26 +36,30 @@ export function TradeLog({ trades, agents }: Props) {
         {trades.length === 0 && <div style={{ padding: 12, color: '#666' }}>No trades yet…</div>}
         {trades.map((t) => {
           const isUser = t.buyerId === 'user' || t.sellerId === 'user';
-          // The aggressor is whoever crossed the spread on this trade's side.
-          const actor = resolve(t.side === 'buy' ? t.buyerId : t.sellerId);
+          // The aggressor crossed the spread; the counterparty was resting (usually a maker).
+          const aggressor = resolve(t.side === 'buy' ? t.buyerId : t.sellerId);
+          const counterparty = resolve(t.side === 'buy' ? t.sellerId : t.buyerId);
           return (
             <div
               key={t.id}
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 8,
+                gap: 6,
                 padding: '4px 12px',
                 borderBottom: '1px solid #1a1a2a',
                 background: isUser ? '#1e1e3a' : 'transparent',
               }}
             >
-              <span style={{ color: '#666', width: 44 }}>#{t.tick}</span>
-              <span style={{ color: t.side === 'buy' ? '#4ade80' : '#f87171', width: 36 }}>{t.side.toUpperCase()}</span>
-              <span style={{ color: '#ddd', width: 56, textAlign: 'right' }}>{t.size.toFixed(1)}</span>
-              <span style={{ color: '#eee', width: 64, textAlign: 'right' }}>${t.price.toFixed(2)}</span>
-              <span style={{ color: actor.color, flex: 1, textAlign: 'right', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {actor.label}
+              <span style={{ color: '#666', width: 40 }}>#{t.tick}</span>
+              <span style={{ color: t.side === 'buy' ? '#4ade80' : '#f87171', width: 34 }}>{t.side.toUpperCase()}</span>
+              <span style={{ color: '#ddd', width: 48, textAlign: 'right' }}>{t.size.toFixed(1)}</span>
+              <span style={{ color: '#eee', width: 56, textAlign: 'right' }}>${t.price.toFixed(2)}</span>
+              {/* aggressor (bold) took liquidity from the counterparty (dim maker) */}
+              <span style={{ flex: 1, textAlign: 'right', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <span style={{ color: aggressor.color, fontWeight: 600 }}>{aggressor.label}</span>
+                <span style={{ color: '#555' }}> ← </span>
+                <span style={{ color: counterparty.color, opacity: 0.75 }}>{counterparty.label}</span>
               </span>
             </div>
           );
