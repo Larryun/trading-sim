@@ -18,6 +18,13 @@ const STRATEGY_WINDOW = 256;
 const MAX_TRADES = 500;
 
 const AUTO_NEWS_PROB = 0.02;
+// Sentiment realism: beyond discrete news jumps, the "mood" also reacts to recent
+// price action (reflexivity), wobbles randomly, spikes harder on the way down
+// (fear), and gets jumpier when already excited (volatility clustering).
+const SENTIMENT_REFLEXIVITY = 12; // how strongly recent % return feeds the mood
+const SENTIMENT_MOOD_NOISE = 0.04; // baseline random mood wobble per tick
+const SENTIMENT_FEAR_ASYMMETRY = 1.6; // downside moves move sentiment more than up
+const SENTIMENT_CAP = 3; // bound so the reflexive loop can't run away
 
 // Dividends inject cash into the market from OUTSIDE the trading system (the
 // company paying shareholders), so the market isn't a closed, zero-sum cash pool.
@@ -177,12 +184,15 @@ export class SimulationEngine {
   step(): Trade[] {
     this.tick += 1;
 
-    // Pay dividends to every holder — fresh cash entering the market from outside
-    // the trading system, so buying power doesn't just get locked up in positions.
+    // Pay dividends to every holder — fresh cash entering from outside the trading
+    // system. Realistically the stock drops by the dividend on the ex-div date
+    // (cash left the company), so the fundamental falls by the same amount; this
+    // keeps dividends from being a permanent upward price inflation.
     if (this.dividendPerShare > 0 && this.tick % DIVIDEND_INTERVAL === 0) {
       for (const a of this.agents) a.cash += a.shares * this.dividendPerShare;
       this.user.cash += this.user.shares * this.dividendPerShare;
       this.totalDividendsPaid += this.sharesOutstanding * this.dividendPerShare;
+      this.fundamentalValue = Math.max(1, this.fundamentalValue - this.dividendPerShare);
     }
 
     // No backstop liquidity is injected: the only resting orders are those the
@@ -192,7 +202,21 @@ export class SimulationEngine {
       const magnitude = 0.5 + Math.random();
       this.triggerEvent(Math.random() < 0.5 ? magnitude : -magnitude);
     }
+
+    // Evolve the mood: reflexive feedback from recent price action (rallies breed
+    // optimism, drops breed fear — sharper on the downside), a random wobble that
+    // grows when the market is already excited (volatility clustering), then decay.
+    if (this.priceRing.size >= 6) {
+      const w = this.priceRing.window(6).data;
+      const p0 = w[0];
+      const ret = p0 > 0 ? (w[w.length - 1] - p0) / p0 : 0;
+      let reflex = SENTIMENT_REFLEXIVITY * ret;
+      if (ret < 0) reflex *= SENTIMENT_FEAR_ASYMMETRY;
+      this.sentiment += reflex;
+    }
+    this.sentiment += (Math.random() * 2 - 1) * SENTIMENT_MOOD_NOISE * (1 + Math.abs(this.sentiment));
     this.sentiment *= this.sentimentDecay;
+    this.sentiment = Math.max(-SENTIMENT_CAP, Math.min(SENTIMENT_CAP, this.sentiment));
     if (Math.abs(this.sentiment) < 0.001) this.sentiment = 0;
 
     const priceWindow = this.priceRing.window(STRATEGY_WINDOW).data;
