@@ -24,6 +24,19 @@ function movingAverage(history: number[], window: number): number {
   return slice.reduce((a, b) => a + b, 0) / slice.length;
 }
 
+/** Realized volatility: std of per-tick returns over the last `window` ticks. */
+function realizedVol(history: number[], window: number): number {
+  const n = Math.min(window, history.length - 1);
+  if (n < 2) return 0;
+  const rets: number[] = [];
+  for (let i = history.length - n; i < history.length; i++) {
+    const p0 = history[i - 1];
+    if (p0 > 0) rets.push((history[i] - p0) / p0);
+  }
+  const m = rets.reduce((a, b) => a + b, 0) / rets.length;
+  return Math.sqrt(rets.reduce((a, b) => a + (b - m) ** 2, 0) / rets.length);
+}
+
 export const AGENT_TYPE_LABELS: Record<AgentType, string> = {
   noise: 'Noise',
   momentum: 'Momentum',
@@ -89,8 +102,9 @@ export function createAgent(
       return { id, name, type, orderSize: 400, activity: 0.7, takeProfit: 0.06, stopLoss: 0.06, ...account };
     case 'marketMaker':
       // A maker manages inventory via quote skew, so the shared TP/SL exit is off.
-      // Deep ladders (many levels, large size) so the book absorbs aggressive flow.
-      return { id, name, type, spreadBps: 14, quoteSize: 200, levels: 12, inventorySkew: 0.4, activity: 0.8, takeProfit: 0, stopLoss: 0, ...account };
+      // Deep ladders + a volatility-adaptive spread so it widens (charging more) when
+      // informed flow is pushing the price around, its defense against adverse selection.
+      return { id, name, type, spreadBps: 12, volSensitivity: 0.8, maxSpreadBps: 100, quoteSize: 200, levels: 12, inventorySkew: 0.4, activity: 0.8, takeProfit: 0, stopLoss: 0, ...account };
     case 'value':
       // Strong, forceful fundamentalists so price is tightly tethered to fair value
       // (the main long-only force correcting mispricing without shorting).
@@ -169,7 +183,10 @@ export function decideOrder(agent: Agent, market: MarketState): OrderIntent[] {
       // unwind inventory (quote lower when long, higher when short) and shifted by
       // directional bias. This is what gives the order book real depth.
       const mid = price;
-      const half = mid * (agent.spreadBps / 10000);
+      // Adaptive spread: widen with recent volatility so informed flow pays more.
+      const volBps = realizedVol(market.priceHistory, 20) * 10000;
+      const effSpreadBps = Math.min(agent.maxSpreadBps, agent.spreadBps + agent.volSensitivity * volBps);
+      const half = mid * (effSpreadBps / 10000);
       const equity = agent.cash + agent.shares * mid;
       const targetShares = mid > 0 ? equity / 2 / mid : 0; // aim to hold ~half in stock
       const excess = targetShares > 0 ? (agent.shares - targetShares) / targetShares : 0;

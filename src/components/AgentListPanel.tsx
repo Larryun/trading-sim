@@ -25,7 +25,9 @@ const PARAM_HELP: Record<string, string> = {
   Threshold: 'How far price must deviate from the average before it trades.',
   Strength: 'How aggressively order size scales with the deviation.',
   'Order size': 'Base shares per order, scaled by how strong sentiment is.',
-  'Half-spread': 'How far its bid/ask sit from mid on each side (basis points).',
+  'Base half-spread': 'Baseline distance of its bid/ask from mid (basis points), in calm markets.',
+  'Vol sensitivity': 'How much it widens the spread as recent volatility rises — its defense against informed flow.',
+  'Max half-spread': 'Cap on how wide the volatility-adjusted spread can get.',
   'Quote size': 'Shares quoted at each price level, on each side.',
   'Depth (levels)': 'How many price levels it quotes per side — more = a deeper book.',
   'Inventory skew': 'How strongly it shifts quotes to unwind excess inventory.',
@@ -227,8 +229,12 @@ function AgentCard({
           )}
           {agent.type === 'marketMaker' && (
             <>
-              <Slider label="Half-spread" value={agent.spreadBps} min={1} max={100} step={1}
+              <Slider label="Base half-spread" value={agent.spreadBps} min={1} max={100} step={1}
                 onChange={(v) => onUpdate({ spreadBps: v })} format={(v) => `${v} bps`} />
+              <Slider label="Vol sensitivity" value={agent.volSensitivity} min={0} max={6} step={0.25}
+                onChange={(v) => onUpdate({ volSensitivity: v })} format={(v) => v.toFixed(2)} />
+              <Slider label="Max half-spread" value={agent.maxSpreadBps} min={20} max={400} step={10}
+                onChange={(v) => onUpdate({ maxSpreadBps: v })} format={(v) => `${v} bps`} />
               <Slider label="Quote size" value={agent.quoteSize} min={10} max={1000} step={10}
                 onChange={(v) => onUpdate({ quoteSize: v })} format={(v) => `${v.toFixed(0)} sh`} />
               <Slider label="Depth (levels)" value={agent.levels} min={1} max={15} step={1}

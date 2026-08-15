@@ -103,7 +103,9 @@ export interface MarketMakerAgent extends AgentAccount {
   id: string;
   name: string;
   type: 'marketMaker';
-  spreadBps: number; // half-spread (bps) between price levels
+  spreadBps: number; // base half-spread (bps) between price levels
+  volSensitivity: number; // how much recent volatility widens the spread (adverse-selection defense)
+  maxSpreadBps: number; // cap on the widened half-spread
   quoteSize: number; // shares quoted per level per side
   levels: number; // number of price levels quoted on each side (book depth)
   inventorySkew: number; // how strongly to skew quotes to unwind inventory [0,1]
