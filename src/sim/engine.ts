@@ -17,7 +17,14 @@ const HISTORY_CAP = 4096;
 const STRATEGY_WINDOW = 256;
 const MAX_TRADES = 500;
 
-const AUTO_NEWS_PROB = 0.02;
+// News arrives in lumpy bursts, not a constant drizzle: a low base rate, but an
+// event raises the odds of follow-ups for a while (clustering).
+const AUTO_NEWS_PROB = 0.008;
+const NEWS_CLUSTER_TICKS = 30; // window over which follow-up news is more likely
+const NEWS_CLUSTER_BOOST = 5; // how much more likely follow-ups are inside a cluster
+// A news event's fundamental repricing DIFFUSES in over time rather than jumping,
+// so the market shows realistic post-news drift as the information propagates.
+const FUNDAMENTAL_DIFFUSION = 0.06;
 
 // Short selling: bearish "view" traders can borrow & sell (shares go negative),
 // collateralized by their cash. If a rising price wipes out that collateral they
@@ -72,7 +79,9 @@ export class SimulationEngine {
   sentiment = 0;
   sentimentDecay = 0.96; // mood persists (shrinks only slowly each tick) — regimes last
   sentimentReflexivity = 3; // how strongly the recent trend feeds the mood (low = less self-reinforcing drift)
-  fundamentalValue = STARTING_PRICE; // the "true" value; permanently moved by news
+  fundamentalValue = STARTING_PRICE; // the "true" value; eases toward the target (post-news drift)
+  fundamentalTarget = STARTING_PRICE; // where news has repriced fair value TO (diffuses in gradually)
+  private newsClusterTicks = 0; // ticks remaining in the current news cluster
   // Tuned low so the news-driven fundamental stays within reach of the long-only
   // agent pool in BOTH directions (they can't short to chase a crashed fair).
   fundamentalImpact = 0.012; // fraction the fundamental moves per unit of news sentiment
@@ -128,9 +137,11 @@ export class SimulationEngine {
     };
     this.events.push(event);
     if (this.events.length > 100) this.events = this.events.slice(-100);
-    // Transient reaction (decays) plus a permanent repricing of the fundamental.
+    // Transient reaction (decays now) plus a permanent repricing of the fundamental
+    // that DIFFUSES in over the next ~dozens of ticks (post-news drift), not instantly.
     this.sentiment += sentiment;
-    this.fundamentalValue = Math.max(1, this.fundamentalValue * (1 + sentiment * this.fundamentalImpact));
+    this.fundamentalTarget = Math.max(1, this.fundamentalTarget * (1 + sentiment * this.fundamentalImpact));
+    this.newsClusterTicks = NEWS_CLUSTER_TICKS; // news begets follow-up news
     return event;
   }
 
@@ -201,15 +212,22 @@ export class SimulationEngine {
       this.user.cash += this.user.shares * this.dividendPerShare;
       this.totalDividendsPaid += this.sharesOutstanding * this.dividendPerShare;
       this.fundamentalValue = Math.max(1, this.fundamentalValue - this.dividendPerShare);
+      this.fundamentalTarget = Math.max(1, this.fundamentalTarget - this.dividendPerShare);
     }
 
-    // No backstop liquidity is injected: the only resting orders are those the
-    // agents (esp. market makers) and the user post. If makers pull, the book
-    // thins and the market can go illiquid — a real liquidity crisis.
-    if (this.autoNews && Math.random() < AUTO_NEWS_PROB) {
-      const magnitude = 0.5 + Math.random();
-      this.triggerEvent(Math.random() < 0.5 ? magnitude : -magnitude);
+    // Auto-news arrives in lumpy bursts: a low base rate, boosted while a cluster
+    // is active. Events are fewer but bigger than a constant drizzle of micro-news.
+    if (this.autoNews) {
+      const prob = AUTO_NEWS_PROB * (this.newsClusterTicks > 0 ? NEWS_CLUSTER_BOOST : 1);
+      if (Math.random() < prob) {
+        const magnitude = 1 + Math.random() * 1.5; // 1.0 .. 2.5
+        this.triggerEvent(Math.random() < 0.5 ? magnitude : -magnitude);
+      }
     }
+    if (this.newsClusterTicks > 0) this.newsClusterTicks--;
+
+    // The fundamental eases toward the news-set target (information diffusing in).
+    this.fundamentalValue += (this.fundamentalTarget - this.fundamentalValue) * FUNDAMENTAL_DIFFUSION;
 
     // Evolve the mood: reflexive feedback from recent price action (rallies breed
     // optimism, drops breed fear — sharper on the downside), a random wobble that
