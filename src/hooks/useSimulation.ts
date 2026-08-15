@@ -69,6 +69,9 @@ export function useSimulation() {
   const [floatBreakdown, setFloatBreakdown] = useState<FloatBreakdown>(() => floatOf(engineRef.current));
   const [sentiment, setSentiment] = useState(0);
   const [fundamentalValue, setFundamentalValue] = useState(engineRef.current.fundamentalValue);
+  const [tick, setTick] = useState(0);
+  const [totalDividendsPaid, setTotalDividendsPaid] = useState(0);
+  const [totalFeesPaid, setTotalFeesPaid] = useState(0);
   const [autoNews, setAutoNews] = useState(false);
   const [lastUserFill, setLastUserFill] = useState<UserFill>(null);
   const [userOrders, setUserOrders] = useState<UserOrderRecord[]>([]);
@@ -133,6 +136,9 @@ export function useSimulation() {
     setUserRestingOrders(engine.book.countOrdersByOwner('user'));
     setBookDepth(engine.book.getDepth(BOOK_DEPTH));
     setMyLimitOrders(engine.book.getUserOrders());
+    setTick(engine.tick);
+    setTotalDividendsPaid(engine.totalDividendsPaid);
+    setTotalFeesPaid(engine.totalFeesPaid);
     rebuildDisplay();
   };
 
@@ -268,6 +274,9 @@ export function useSimulation() {
     user,
     currentPrice,
     fundamentalValue,
+    tick,
+    totalDividendsPaid,
+    totalFeesPaid,
     bestBid,
     bestAsk,
     unrealizedPnl,

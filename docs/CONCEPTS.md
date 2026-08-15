@@ -8,6 +8,12 @@ those participants, tune how they behave, fire off news, and shrink or grow the
 share supply — all while watching the price, volume, sentiment, and ownership
 update tick by tick.
 
+It has two pages: the **Market** view (`/`) where you trade and tune, and a
+**Statistics** view (`/stats`) that analyzes the *same live market* — profit &
+loss by strategy, float ownership, money flows (dividends in vs. fees out), and
+how closely price tracks fundamental value. The stats page is the quickest way to
+*see* the ideas below playing out (e.g. which strategies actually make money).
+
 The big idea it teaches is this:
 
 > **There is no "true" price handed down from somewhere. The price is simply the
