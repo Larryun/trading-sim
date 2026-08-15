@@ -89,7 +89,7 @@ export function createAgent(
       return { id, name, type, orderSize: 200, activity: 0.5, bias: 0, takeProfit: 0.06, stopLoss: 0.06, ...account };
     case 'marketMaker':
       // A maker manages inventory via quote skew, so the shared TP/SL exit is off.
-      return { id, name, type, spreadBps: 8, quoteSize: 100, inventorySkew: 0.5, activity: 0.8, bias: 0, takeProfit: 0, stopLoss: 0, ...account };
+      return { id, name, type, spreadBps: 8, quoteSize: 100, levels: 6, inventorySkew: 0.5, activity: 0.8, bias: 0, takeProfit: 0, stopLoss: 0, ...account };
     case 'value':
       return { id, name, type, marginOfSafety: 0.1, conviction: 6, contrarianGain: 0.3, maxOrderShares: 400, activity: 0.15, bias: 0, takeProfit: 0, stopLoss: 0, ...account };
     case 'fomoHerd':
@@ -173,8 +173,9 @@ export function decideOrder(agent: Agent, market: MarketState): OrderIntent[] {
       return size > 0 ? [{ side, size }] : [];
     }
     case 'marketMaker': {
-      // Post a two-sided resting quote around mid, skewed to unwind inventory
-      // (quote lower when long, higher when short) and shifted by directional bias.
+      // Post a two-sided ladder of resting quotes stepping away from mid, skewed to
+      // unwind inventory (quote lower when long, higher when short) and shifted by
+      // directional bias. This is what gives the order book real depth.
       const mid = price;
       const half = mid * (agent.spreadBps / 10000);
       const equity = agent.cash + agent.shares * mid;
@@ -182,12 +183,13 @@ export function decideOrder(agent: Agent, market: MarketState): OrderIntent[] {
       const excess = targetShares > 0 ? (agent.shares - targetShares) / targetShares : 0;
       const skew = agent.inventorySkew * Math.max(-1, Math.min(1, excess)) * half;
       const center = mid + agent.bias * half - skew;
-      const bid = Math.max(0.01, center - half);
-      const ask = center + half;
-      return [
-        { side: 'buy', size: agent.quoteSize, limitPrice: bid },
-        { side: 'sell', size: agent.quoteSize, limitPrice: ask },
-      ];
+      const intents: OrderIntent[] = [];
+      for (let level = 1; level <= agent.levels; level++) {
+        // Innermost first, so if capital runs low the near-touch levels post first.
+        intents.push({ side: 'buy', size: agent.quoteSize, limitPrice: Math.max(0.01, center - half * level) });
+        intents.push({ side: 'sell', size: agent.quoteSize, limitPrice: center + half * level });
+      }
+      return intents;
     }
     case 'value': {
       // Anchor to the evolving fundamental value (moved by news); buy when cheap,

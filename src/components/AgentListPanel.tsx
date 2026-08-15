@@ -27,7 +27,8 @@ const PARAM_HELP: Record<string, string> = {
   Strength: 'How aggressively order size scales with the deviation.',
   'Order size': 'Base shares per order, scaled by how strong sentiment is.',
   'Half-spread': 'How far its bid/ask sit from mid on each side (basis points).',
-  'Quote size': 'Shares quoted on each side of the book.',
+  'Quote size': 'Shares quoted at each price level, on each side.',
+  'Depth (levels)': 'How many price levels it quotes per side — more = a deeper book.',
   'Inventory skew': 'How strongly it shifts quotes to unwind excess inventory.',
   'Margin of safety': 'Required gap from the fundamental value before it acts (a dead band).',
   Conviction: 'How aggressively order size scales with the discount/premium.',
@@ -221,6 +222,8 @@ function AgentCard({
                 onChange={(v) => onUpdate({ spreadBps: v })} format={(v) => `${v} bps`} />
               <Slider label="Quote size" value={agent.quoteSize} min={10} max={1000} step={10}
                 onChange={(v) => onUpdate({ quoteSize: v })} format={(v) => `${v.toFixed(0)} sh`} />
+              <Slider label="Depth (levels)" value={agent.levels} min={1} max={15} step={1}
+                onChange={(v) => onUpdate({ levels: v })} format={(v) => `${v}`} />
               <Slider label="Inventory skew" value={agent.inventorySkew} min={0} max={1} step={0.05}
                 onChange={(v) => onUpdate({ inventorySkew: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
               <Slider label="Activity" value={agent.activity} min={0} max={1} step={0.05}

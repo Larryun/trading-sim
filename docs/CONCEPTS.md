@@ -120,10 +120,13 @@ low and selling slightly high, over and over.
 
 **In the app:** there is **no synthetic backstop** — *all* liquidity comes from
 **market-maker agents** (and any limit orders you or other agents place). A maker
-agent posts two-sided quotes with a configurable half-spread (`spreadBps`), quote
-size, and inventory-skew strength; the tightest quotes among all makers set the
-spread. Add more makers and the spread narrows; **remove them all and the book
-empties — the market goes illiquid and trades stop until someone quotes again.**
+posts a two-sided **ladder** of quotes: `Depth` price levels on each side, spaced
+by its half-spread (`spreadBps`), each of `quoteSize` shares — which is what gives
+the order book its multi-level depth (thin books mean few makers or shallow
+ladders). Everyone else trades with market orders, so they *take* liquidity rather
+than adding resting depth. The tightest quotes among all makers set the spread;
+add makers or deepen their ladders and the book fills out, **remove them all and
+the book empties — the market goes illiquid until someone quotes again.**
 
 ---
 

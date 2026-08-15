@@ -107,8 +107,9 @@ export interface MarketMakerAgent extends AgentAccount {
   id: string;
   name: string;
   type: 'marketMaker';
-  spreadBps: number; // half-spread (bps) on each side of mid
-  quoteSize: number; // shares quoted per side
+  spreadBps: number; // half-spread (bps) between price levels
+  quoteSize: number; // shares quoted per level per side
+  levels: number; // number of price levels quoted on each side (book depth)
   inventorySkew: number; // how strongly to skew quotes to unwind inventory [0,1]
   activity: number; // probability [0,1] it re-quotes on a given tick
   bias: number; // directional lean [-1,1]: shifts both quotes
