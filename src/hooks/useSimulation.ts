@@ -64,6 +64,7 @@ export function useSimulation() {
   const [floatBreakdown, setFloatBreakdown] = useState<FloatBreakdown>(() => floatOf(engineRef.current));
   const [sentiment, setSentiment] = useState(0);
   const [fundamentalValue, setFundamentalValue] = useState(engineRef.current.fundamentalValue);
+  const [recentPrices, setRecentPrices] = useState<number[]>([]); // recent window for decision explanations
   const [tick, setTick] = useState(0);
   const [totalDividendsPaid, setTotalDividendsPaid] = useState(0);
   const [totalFeesPaid, setTotalFeesPaid] = useState(0);
@@ -132,6 +133,7 @@ export function useSimulation() {
     setTick(engine.tick);
     setTotalDividendsPaid(engine.totalDividendsPaid);
     setTotalFeesPaid(engine.totalFeesPaid);
+    setRecentPrices(engine.priceRing.window(80).data);
     rebuildDisplay();
   };
 
@@ -248,6 +250,7 @@ export function useSimulation() {
     user,
     currentPrice,
     fundamentalValue,
+    recentPrices,
     tick,
     totalDividendsPaid,
     totalFeesPaid,

@@ -283,6 +283,157 @@ export function decideOrder(agent: Agent, market: MarketState): OrderIntent[] {
   }
 }
 
+export type Verdict = 'buy' | 'sell' | 'hold' | 'quote';
+export interface DecisionSignal {
+  label: string;
+  value: string;
+  lean: number; // +1 bullish, -1 bearish, 0 neutral (for coloring)
+}
+export interface DecisionExplanation {
+  rule: string; // plain-English description of the strategy
+  signals: DecisionSignal[]; // the live inputs it reads right now
+  verdict: Verdict; // what it would do this instant
+  detail: string; // why
+}
+
+/**
+ * Explain, in plain terms, how an agent decides right now: the live signals it
+ * reads and the resulting verdict. Deterministic (ignores the random activity
+ * gate) — it shows the underlying lean, for the "Agent Decisions" view.
+ */
+export function explainDecision(agent: Agent, market: MarketState): DecisionExplanation {
+  const price = market.priceHistory[market.priceHistory.length - 1] ?? 0;
+  switch (agent.type) {
+    case 'noise':
+      return {
+        rule: 'Trades at random — uninformed flow that just pays the spread.',
+        signals: [{ label: 'Direction', value: '50/50 coin flip', lean: 0 }],
+        verdict: 'hold',
+        detail: `On each active tick it randomly buys or sells up to ${agent.maxSize} shares.`,
+      };
+    case 'momentum': {
+      const ch = pctChange(market.priceHistory, agent.window);
+      const v: Verdict = Math.abs(ch) <= 0.0001 ? 'hold' : ch > 0 ? 'buy' : 'sell';
+      return {
+        rule: 'Chases the trend — buys when price is rising, sells when falling.',
+        signals: [{ label: `Trend (${agent.window}t)`, value: `${(ch * 100).toFixed(2)}%`, lean: ch > 0 ? 1 : ch < 0 ? -1 : 0 }],
+        verdict: v,
+        detail: v === 'hold' ? 'Trend is flat — waits.' : `Recent trend is ${ch > 0 ? 'up' : 'down'} → ${v}; size grows with trend strength.`,
+      };
+    }
+    case 'meanReversion': {
+      const ma = movingAverage(market.priceHistory, agent.window);
+      const dev = ma > 0 ? (price - ma) / ma : 0;
+      const v: Verdict = Math.abs(dev) <= agent.threshold ? 'hold' : dev > 0 ? 'sell' : 'buy';
+      return {
+        rule: 'Fades deviations from its moving average — bets price snaps back.',
+        signals: [
+          { label: `MA(${agent.window})`, value: `$${ma.toFixed(2)}`, lean: 0 },
+          { label: 'Deviation', value: `${(dev * 100).toFixed(2)}%`, lean: dev > 0 ? -1 : dev < 0 ? 1 : 0 },
+        ],
+        verdict: v,
+        detail: v === 'hold' ? `Within ±${(agent.threshold * 100).toFixed(1)}% of the average — no trade.` : `Price is ${dev > 0 ? 'above' : 'below'} its average → fade it (${v}).`,
+      };
+    }
+    case 'news': {
+      const s = market.sentiment;
+      const v: Verdict = Math.abs(s) <= 0.02 ? 'hold' : s > 0 ? 'buy' : 'sell';
+      return {
+        rule: 'Trades on information — follows market sentiment.',
+        signals: [{ label: 'Sentiment', value: s.toFixed(2), lean: s > 0 ? 1 : s < 0 ? -1 : 0 }],
+        verdict: v,
+        detail: v === 'hold' ? 'Mood is neutral — sits out.' : `Sentiment is ${s > 0 ? 'positive' : 'negative'} → ${v}; size grows with |sentiment|.`,
+      };
+    }
+    case 'value': {
+      const fair = market.fundamentalValue;
+      const disc = fair > 0 ? (fair - price) / fair : 0;
+      const s = Math.max(-1, Math.min(1, market.sentiment));
+      const eff = disc - agent.contrarianGain * s;
+      const v: Verdict = eff > agent.marginOfSafety ? 'buy' : eff < -agent.marginOfSafety ? 'sell' : 'hold';
+      return {
+        rule: 'Buys below fair value, sells above — and fades panic (contrarian).',
+        signals: [
+          { label: 'Fair value', value: `$${fair.toFixed(2)}`, lean: 0 },
+          { label: 'Discount', value: `${(disc * 100).toFixed(1)}%`, lean: disc > 0 ? 1 : disc < 0 ? -1 : 0 },
+          { label: 'After contrarian', value: `${(eff * 100).toFixed(1)}%`, lean: eff > 0 ? 1 : eff < 0 ? -1 : 0 },
+        ],
+        verdict: v,
+        detail: v === 'hold' ? `Within its ${(agent.marginOfSafety * 100).toFixed(1)}% margin of safety — waits.` : `${eff > 0 ? 'Cheap' : 'Expensive'} vs fair beyond its margin → ${v}.`,
+      };
+    }
+    case 'fomoHerd': {
+      const w = agent.shortWindow;
+      const n = market.priceHistory.length;
+      let rShort = 0;
+      let accel = 0;
+      if (n >= 2 * w + 1) {
+        rShort = pctChange(market.priceHistory, w);
+        const pp = market.priceHistory[n - 1 - w];
+        const pp2 = market.priceHistory[n - 1 - 2 * w];
+        const prior = pp2 > 0 ? (pp - pp2) / pp2 : 0;
+        accel = rShort - prior;
+      }
+      const v: Verdict = rShort >= agent.entryThreshold && accel > 0 ? 'buy' : 'hold';
+      return {
+        rule: 'Chases accelerating rallies (buy-only) — and bagholds the reversal.',
+        signals: [
+          { label: `Run (${w}t)`, value: `${(rShort * 100).toFixed(2)}%`, lean: rShort > 0 ? 1 : 0 },
+          { label: 'Accelerating?', value: accel > 0 ? 'yes' : 'no', lean: accel > 0 ? 1 : 0 },
+        ],
+        verdict: v,
+        detail: v === 'buy' ? 'The rally is accelerating past its trigger → piles in.' : 'No accelerating rally to chase — waits (or holds its bags).',
+      };
+    }
+    case 'whale': {
+      const acc = agent.mandate >= 0;
+      const remaining = acc ? agent.targetShares - agent.shares : agent.shares - agent.targetShares;
+      const v: Verdict = remaining > 0.01 ? (acc ? 'buy' : 'sell') : 'hold';
+      return {
+        rule: `A large institution working an ${acc ? 'accumulate' : 'distribute'} program in small slices.`,
+        signals: [
+          { label: 'Holds', value: agent.shares.toFixed(0), lean: 0 },
+          { label: 'Target', value: agent.targetShares.toFixed(0), lean: 0 },
+          { label: 'Remaining', value: remaining.toFixed(0), lean: v === 'buy' ? 1 : v === 'sell' ? -1 : 0 },
+        ],
+        verdict: v,
+        detail: v === 'hold' ? 'Program complete — dormant.' : `${acc ? 'Buying' : 'Selling'} ~${agent.sliceSize} sh/tick toward its target, backing off when its own impact is high.`,
+      };
+    }
+    case 'panicSeller': {
+      const slice = market.priceHistory.slice(-agent.peakWindow);
+      const peak = slice.length ? Math.max(...slice) : price;
+      const dd = peak > 0 ? (peak - price) / peak : 0;
+      const fear = Math.max(0, -market.sentiment);
+      const triggered = agent.shares > 0 && (dd >= agent.panicThreshold || fear >= agent.sentPanic);
+      const v: Verdict = triggered ? 'sell' : agent.cash > 0 && market.sentiment >= 0 && dd < agent.panicThreshold ? 'buy' : 'hold';
+      return {
+        rule: 'Weak hands — capitulates on drawdown/fear, buys back once calm.',
+        signals: [
+          { label: 'Drawdown', value: `${(dd * 100).toFixed(1)}%`, lean: dd > 0 ? -1 : 0 },
+          { label: 'Fear', value: fear.toFixed(2), lean: fear > 0 ? -1 : 0 },
+        ],
+        verdict: v,
+        detail: triggered ? 'Drawdown/fear past its panic point → dumps shares.' : v === 'buy' ? 'Calm and holding cash → buys back the recovery.' : 'Calm with nothing to dump — waits.',
+      };
+    }
+    case 'marketMaker': {
+      const volBps = realizedVol(market.priceHistory, 20) * 10000;
+      const eff = Math.min(agent.maxSpreadBps, agent.spreadBps + agent.volSensitivity * volBps);
+      return {
+        rule: 'Provides liquidity — quotes both sides and earns the spread; widens when volatile.',
+        signals: [
+          { label: 'Recent vol', value: `${volBps.toFixed(1)} bps`, lean: 0 },
+          { label: 'Half-spread', value: `${eff.toFixed(0)} bps`, lean: 0 },
+          { label: 'Inventory', value: agent.shares.toFixed(0), lean: 0 },
+        ],
+        verdict: 'quote',
+        detail: `Posts ${agent.levels} levels × ${agent.quoteSize} sh each side around $${price.toFixed(2)}, skewing to unwind inventory.`,
+      };
+    }
+  }
+}
+
 /**
  * Apply a fill to an account, supporting signed positions (long OR short).
  * `avgCost` is the entry price of the current position; a short position has

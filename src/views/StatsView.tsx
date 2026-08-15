@@ -78,6 +78,18 @@ export function StatsView() {
         <PnlBars data={pnlData} />
       </div>
 
+      {/* Float ownership */}
+      <div style={{ ...panel, marginBottom: 16 }}>
+        <h3 style={{ margin: '0 0 10px', fontSize: 15 }}>Who owns the float?</h3>
+        <OwnershipBar
+          segments={[
+            ...rows.map((r) => ({ label: AGENT_TYPE_LABELS[r.type], shares: r.shares, color: AGENT_TYPE_COLORS[r.type] })),
+            { label: 'You', shares: user.shares, color: '#a78bfa' },
+          ]}
+          total={floatBreakdown.total}
+        />
+      </div>
+
       {/* Per-strategy table */}
       <div style={panel}>
         <h3 style={{ margin: '0 0 10px', fontSize: 15 }}>By strategy</h3>
@@ -132,6 +144,28 @@ function fmt(v: number): string {
   const abs = Math.abs(v);
   const s = abs >= 1000 ? `${(abs / 1000).toFixed(1)}k` : abs.toFixed(0);
   return `${v >= 0 ? '+' : '-'}$${s}`;
+}
+
+// Horizontal stacked bar of share ownership by strategy.
+function OwnershipBar({ segments, total }: { segments: { label: string; shares: number; color: string }[]; total: number }) {
+  const shown = segments.filter((s) => s.shares > 0.01);
+  const pct = (n: number) => (total > 0 ? (n / total) * 100 : 0);
+  return (
+    <div>
+      <div style={{ display: 'flex', height: 16, borderRadius: 6, overflow: 'hidden', border: '1px solid #2a2a3a' }}>
+        {shown.map((s) => (
+          <div key={s.label} style={{ width: `${pct(s.shares)}%`, background: s.color }} title={`${s.label}: ${Math.round(s.shares).toLocaleString()} (${pct(s.shares).toFixed(1)}%)`} />
+        ))}
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', fontSize: 11, color: '#888', marginTop: 6 }}>
+        {shown.map((s) => (
+          <span key={s.label}>
+            <span style={{ color: s.color }}>■</span> {s.label} {pct(s.shares).toFixed(1)}%
+          </span>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 // Plain-SVG P&L-by-strategy bars (no charting lib), zero baseline in the middle.

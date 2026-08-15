@@ -17,6 +17,7 @@ export function NavBar() {
       <h1 style={{ margin: 0, fontSize: 18 }}>Trading Price Simulator</h1>
       <nav style={{ display: 'flex', gap: 8 }}>
         <NavLink to="/" end style={({ isActive }) => link(isActive)}>Market</NavLink>
+        <NavLink to="/decisions" style={({ isActive }) => link(isActive)}>Decisions</NavLink>
         <NavLink to="/stats" style={({ isActive }) => link(isActive)}>Statistics</NavLink>
       </nav>
     </div>
