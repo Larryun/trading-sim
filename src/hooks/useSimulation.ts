@@ -5,11 +5,6 @@ import type { BookLevel, RestingUserOrder } from '../sim/orderBook';
 import type { Agent, AgentAccount, AgentType, Side, UserOrderRecord } from '../sim/types';
 
 const BOOK_DEPTH = 12; // price levels shown per side in the order-book view
-// Cap UI updates to ~15fps regardless of sim tick rate — the engine keeps
-// stepping on its timer, but React state is flushed at most this often. This
-// decouples render cost from tick speed and keeps long sessions smooth.
-const RENDER_INTERVAL_MS = 66;
-
 export type ChartType = 'line' | 'candle';
 export type UserFill = { side: Side; size: number; avgPrice: number; priceBefore: number } | null;
 export interface SentimentPoint {
@@ -84,8 +79,6 @@ export function useSimulation() {
   const [tickMs, setTickMs] = useState(200);
   const [stepMs, setStepMs] = useState(0); // measured compute time per tick (smoothed)
   const stepEmaRef = useRef(0);
-  const dirtyRef = useRef(false); // engine advanced since the last UI flush
-  const lastRenderTsRef = useRef(0);
   const lastBuiltTickRef = useRef(-1); // engine tick the display bars were last built from
   const lastBuiltIntervalRef = useRef(0); // bar size the display bars were last built at
   const [barInterval, setBarInterval] = useState(5);
@@ -147,35 +140,16 @@ export function useSimulation() {
       refreshFromEngine(); // paused: show the final engine state once
       return;
     }
-    // The timer only advances the engine (cheap) and flags that a flush is due.
+    // Step the engine and flush to React every tick (no render throttle).
     const interval = setInterval(() => {
       const t0 = performance.now();
       engineRef.current.step();
       const dt = performance.now() - t0;
-      // Exponential moving average so the readout is stable, not jittery.
       stepEmaRef.current = stepEmaRef.current === 0 ? dt : stepEmaRef.current * 0.9 + dt * 0.1;
-      dirtyRef.current = true;
+      refreshFromEngine();
+      setStepMs(stepEmaRef.current);
     }, tickMs);
-
-    // A separate rAF loop flushes engine state into React at most ~15fps, no
-    // matter how fast the sim ticks — this is what keeps long sessions smooth.
-    let raf = 0;
-    const loop = () => {
-      const now = performance.now();
-      if (dirtyRef.current && now - lastRenderTsRef.current >= RENDER_INTERVAL_MS) {
-        dirtyRef.current = false;
-        lastRenderTsRef.current = now;
-        refreshFromEngine();
-        setStepMs(stepEmaRef.current);
-      }
-      raf = requestAnimationFrame(loop);
-    };
-    raf = requestAnimationFrame(loop);
-
-    return () => {
-      clearInterval(interval);
-      cancelAnimationFrame(raf);
-    };
+    return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [running, tickMs]);
 
