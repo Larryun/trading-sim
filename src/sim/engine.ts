@@ -21,7 +21,6 @@ const AUTO_NEWS_PROB = 0.02;
 // Sentiment realism: beyond discrete news jumps, the "mood" also reacts to recent
 // price action (reflexivity), wobbles randomly, spikes harder on the way down
 // (fear), and gets jumpier when already excited (volatility clustering).
-const SENTIMENT_REFLEXIVITY = 6; // how strongly the recent trend feeds the mood
 const SENTIMENT_REFLEX_WINDOW = 12; // ticks of price action the mood reads (longer = smoother)
 const SENTIMENT_MOOD_NOISE = 0.008; // small random wobble (kept low so mood isn't just noise)
 const SENTIMENT_FEAR_ASYMMETRY = 1.6; // downside moves move sentiment more than up
@@ -64,7 +63,8 @@ export class SimulationEngine {
   };
 
   sentiment = 0;
-  sentimentDecay = 0.9; // transient sentiment shrinks to this fraction each tick
+  sentimentDecay = 0.96; // mood persists (shrinks only slowly each tick) — regimes last
+  sentimentReflexivity = 3; // how strongly the recent trend feeds the mood (low = less self-reinforcing drift)
   fundamentalValue = STARTING_PRICE; // the "true" value; permanently moved by news
   // Tuned low so the news-driven fundamental stays within reach of the long-only
   // agent pool in BOTH directions (they can't short to chase a crashed fair).
@@ -211,7 +211,7 @@ export class SimulationEngine {
       const w = this.priceRing.window(SENTIMENT_REFLEX_WINDOW + 1).data;
       const p0 = w[0];
       const ret = p0 > 0 ? (w[w.length - 1] - p0) / p0 : 0;
-      let reflex = SENTIMENT_REFLEXIVITY * ret;
+      let reflex = this.sentimentReflexivity * ret;
       if (ret < 0) reflex *= SENTIMENT_FEAR_ASYMMETRY;
       this.sentiment += reflex;
     }
