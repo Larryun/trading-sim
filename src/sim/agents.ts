@@ -91,7 +91,9 @@ export function createAgent(
       // A maker manages inventory via quote skew, so the shared TP/SL exit is off.
       return { id, name, type, spreadBps: 8, quoteSize: 100, levels: 6, inventorySkew: 0.5, activity: 0.8, bias: 0, takeProfit: 0, stopLoss: 0, ...account };
     case 'value':
-      return { id, name, type, marginOfSafety: 0.1, conviction: 6, contrarianGain: 0.3, maxOrderShares: 400, activity: 0.15, bias: 0, takeProfit: 0, stopLoss: 0, ...account };
+      // Strong, active fundamentalists so price is meaningfully tethered to fair
+      // value (the main long-only force correcting mispricing without shorting).
+      return { id, name, type, marginOfSafety: 0.05, conviction: 12, contrarianGain: 0.3, maxOrderShares: 1000, activity: 0.35, bias: 0, takeProfit: 0, stopLoss: 0, ...account };
     case 'fomoHerd':
       return { id, name, type, shortWindow: 4, entryThreshold: 0.008, sentimentGain: 1, convexity: 2, maxBuyFrac: 0.4, activity: 0.5, bias: 0, takeProfit: 0.12, stopLoss: 0, ...account };
     case 'whale':

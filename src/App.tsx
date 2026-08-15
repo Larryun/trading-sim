@@ -114,9 +114,7 @@ export default function App() {
 
       {/* Charts: price on top, buy/sell order flow below */}
       <div style={{ ...panel, marginBottom: 16 }}>
-        {sim.chartType === 'candle'
-          ? <CandleChart bars={sim.bars} fundamental={sim.fundamentalValue} />
-          : <PriceChart bars={sim.bars} fundamental={sim.fundamentalValue} />}
+        {sim.chartType === 'candle' ? <CandleChart bars={sim.bars} /> : <PriceChart bars={sim.bars} />}
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #2a2a3a' }}>
           <VolumeChart volumeBars={sim.volumeBars} />
         </div>

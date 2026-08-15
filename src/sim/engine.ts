@@ -17,11 +17,7 @@ const HISTORY_CAP = 4096;
 const STRATEGY_WINDOW = 256;
 const MAX_TRADES = 500;
 
-const SENTIMENT_DECAY = 0.92;
 const AUTO_NEWS_PROB = 0.02;
-// A news event permanently reprices the fundamental by this fraction per unit of
-// its sentiment magnitude (transient sentiment decays; the fundamental shift stays).
-const FUNDAMENTAL_IMPACT = 0.03;
 
 // Dividends inject cash into the market from OUTSIDE the trading system (the
 // company paying shareholders), so the market isn't a closed, zero-sum cash pool.
@@ -60,13 +56,16 @@ export class SimulationEngine {
   };
 
   sentiment = 0;
+  sentimentDecay = 0.92; // transient sentiment shrinks to this fraction each tick
   fundamentalValue = STARTING_PRICE; // the "true" value; permanently moved by news
+  fundamentalImpact = 0.03; // fraction the fundamental moves per unit of news sentiment
   events: NewsEvent[] = [];
   autoNews = false;
   private nextEventId = 1;
 
   // Organic cash inflow: cash paid per share held, every DIVIDEND_INTERVAL ticks.
-  dividendPerShare = 0.1;
+  // Kept modest so it doesn't inflate price far above fundamental value.
+  dividendPerShare = 0.04;
   totalDividendsPaid = 0;
 
   // Transaction cost: the taker (aggressor) pays this fraction of notional on every
@@ -114,7 +113,7 @@ export class SimulationEngine {
     if (this.events.length > 100) this.events = this.events.slice(-100);
     // Transient reaction (decays) plus a permanent repricing of the fundamental.
     this.sentiment += sentiment;
-    this.fundamentalValue = Math.max(1, this.fundamentalValue * (1 + sentiment * FUNDAMENTAL_IMPACT));
+    this.fundamentalValue = Math.max(1, this.fundamentalValue * (1 + sentiment * this.fundamentalImpact));
     return event;
   }
 
@@ -191,7 +190,7 @@ export class SimulationEngine {
       const magnitude = 0.5 + Math.random();
       this.triggerEvent(Math.random() < 0.5 ? magnitude : -magnitude);
     }
-    this.sentiment *= SENTIMENT_DECAY;
+    this.sentiment *= this.sentimentDecay;
     if (Math.abs(this.sentiment) < 0.001) this.sentiment = 0;
 
     const priceWindow = this.priceRing.window(STRATEGY_WINDOW).data;

@@ -34,7 +34,10 @@ function createEngine(): SimulationEngine {
   engine.addAgent('momentum', 20000);
   engine.addAgent('meanReversion', 30000);
   engine.addAgent('news', 20000);
-  engine.addAgent('value', 30000);
+  // A strong value cohort keeps price tethered to the (news-driven) fundamental.
+  engine.addAgent('value', 80000);
+  engine.addAgent('value', 80000);
+  engine.addAgent('value', 80000);
   engine.addAgent('fomoHerd', 20000);
   engine.addAgent('fomoHerd', 20000);
   engine.addAgent('panicSeller', 40000);

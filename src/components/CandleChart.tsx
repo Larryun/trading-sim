@@ -3,7 +3,6 @@ import type { Bar } from '../sim/bars';
 
 interface Props {
   bars: Bar[];
-  fundamental?: number;
 }
 
 const HEIGHT = 320;
@@ -14,7 +13,7 @@ const PAD_BOTTOM = 20;
 const UP = '#4ade80';
 const DOWN = '#f87171';
 
-export function CandleChart({ bars, fundamental }: Props) {
+export function CandleChart({ bars }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(800);
 
@@ -33,8 +32,8 @@ export function CandleChart({ bars, fundamental }: Props) {
 
   const highs = bars.length ? bars.map((b) => b.high) : [101];
   const lows = bars.length ? bars.map((b) => b.low) : [99];
-  const max = Math.max(...highs, fundamental ?? -Infinity);
-  const min = Math.min(...lows, fundamental ?? Infinity);
+  const max = Math.max(...highs);
+  const min = Math.min(...lows);
   const pad = Math.max((max - min) * 0.1, 0.5);
   const yMax = max + pad;
   const yMin = min - pad;
@@ -64,15 +63,6 @@ export function CandleChart({ bars, fundamental }: Props) {
             </g>
           );
         })}
-
-        {/* fundamental value reference line */}
-        {fundamental != null && (
-          <g>
-            <line x1={PAD_LEFT} y1={yScale(fundamental)} x2={width - PAD_RIGHT} y2={yScale(fundamental)}
-              stroke="#22d3ee" strokeWidth={1} strokeDasharray="4 4" />
-            <text x={PAD_LEFT + 4} y={yScale(fundamental) - 3} fontSize={10} fill="#22d3ee">fair {fundamental.toFixed(2)}</text>
-          </g>
-        )}
 
         {/* candles */}
         {bars.map((b, i) => {
