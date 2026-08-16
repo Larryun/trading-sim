@@ -40,6 +40,11 @@ function createEngine(): SimulationEngine {
   //   block is what keeps market makers a MINORITY of ownership and flow, as in a real
   //   market — without it maker capital dwarfs the float and maker quotes set the price.
   for (let i = 0; i < 2; i++) engine.addAgent('indexFund', 1100000);
+  // — The long-term RETAIL holder base: the long tail of small shareholders. They own a big
+  //   slice of the free float and barely trade. Without them the whole float belongs to a
+  //   handful of big funds, so one cohort inevitably looks like it owns the company — real
+  //   free float is not concentrated that way.
+  for (let i = 0; i < 3; i++) engine.addAgent('holder', 1400000);
 
   // — Institutions: the most capital, the fewest names. The value cohort is what
   //   tethers price to the earnings-based fair value (the market's gravity).

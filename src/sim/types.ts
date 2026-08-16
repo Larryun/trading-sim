@@ -9,7 +9,8 @@ export type AgentType =
   | 'trader'
   | 'dealer'
   | 'speculator'
-  | 'indexFund';
+  | 'indexFund'
+  | 'holder';
 
 // Trader styles = a weighting over the [value, momentum, meanReversion, sentiment]
 // signals. Different styles = different kinds of people. 'Adaptive' starts balanced
@@ -225,7 +226,30 @@ export type Agent =
   | TraderAgent
   | DealerAgent
   | SpeculatorAgent
-  | IndexFundAgent;
+  | IndexFundAgent
+  | HolderAgent;
+
+/**
+ * The long-term retail holder base: the long tail of small shareholders who together own a
+ * large slice of the free float and almost never trade. Without this cohort the entire float
+ * is owned by a handful of big funds, so one of them must arithmetically look like it is
+ * hogging the company — real free float simply isn't concentrated that way.
+ *
+ * It is weakly VALUATION-aware rather than inert: retail supplies stock into euphoric
+ * rallies and slowly buys back after crashes. The trickle is deliberately tiny, so it
+ * stabilises at the margin without competing to set the price.
+ */
+export interface HolderAgent extends AgentAccount {
+  id: string;
+  name: string;
+  type: 'holder';
+  trimBand: number; // sells only once price exceeds fair by more than this
+  trickleFrac: number; // fraction of the position traded per active tick (very small)
+  rebalanceEvery: number; // ticks between reviews — this cohort is slow
+  activity: number;
+  takeProfit: number;
+  stopLoss: number;
+}
 
 /** A record of one executed user order, for the order-history view. */
 export interface UserOrderRecord {

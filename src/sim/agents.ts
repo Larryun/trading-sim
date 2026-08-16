@@ -43,6 +43,7 @@ export const AGENT_TYPE_LABELS: Record<AgentType, string> = {
   dealer: 'Gamma squeeze (test)',
   speculator: 'Options speculator',
   indexFund: 'Index / passive fund',
+  holder: 'Long-term holders (retail)',
 };
 
 export const AGENT_TYPE_COLORS: Record<AgentType, string> = {
@@ -55,6 +56,7 @@ export const AGENT_TYPE_COLORS: Record<AgentType, string> = {
   dealer: '#eab308',
   speculator: '#f472b6',
   indexFund: '#64748b',
+  holder: '#a78bfa',
 };
 
 /**
@@ -201,6 +203,16 @@ export function createAgent(
         activity: 1, takeProfit: 0, stopLoss: 0,
         ...account,
         ...(allCash ? {} : { cash: capital * 0.05, shares: (capital * 0.95) / startingPrice }),
+      };
+    case 'holder':
+      // The long-term retail base. Almost ALL shares, almost no cash: these are people who
+      // own the stock, not traders. Its block is what makes every other cohort's ownership
+      // percentage realistic instead of one big fund owning half the company.
+      return {
+        id, name, type, trimBand: 0.25, trickleFrac: 0.004, rebalanceEvery: 40,
+        activity: 1, takeProfit: 0, stopLoss: 0,
+        ...account,
+        ...(allCash ? {} : { cash: capital * 0.03, shares: (capital * 0.97) / startingPrice }),
       };
     case 'panicSeller':
       return { id, name, type, peakWindow: 15, panicThreshold: 0.06, capitulationDD: 0.15, baseDumpFrac: 0.4, sentPanic: 0.6, reentryFrac: 0.3, activity: 0.7, takeProfit: 0, stopLoss: 0, ...account };
@@ -419,6 +431,25 @@ export function decideOrder(agent: Agent, market: MarketState): OrderIntent[] {
     case 'speculator':
       // Trades OPTIONS, not the stock — handled in the engine (needs the option chain).
       return [];
+    case 'holder': {
+      // Slow and weakly valuation-aware: this cohort sits still unless the stock gets far
+      // away from fair value, then supplies a TRICKLE of stock into euphoria and slowly buys
+      // back after a crash. Retail is where shares come from in a bubble.
+      if (market.tick % Math.max(1, agent.rebalanceEvery) !== 0) return [];
+      const fair = market.fundamentalValue;
+      if (fair <= 0) return [];
+      const premium = (price - fair) / fair;
+      if (Math.abs(premium) < agent.trimBand) return []; // normal range: they just hold
+      if (premium > 0) {
+        // Overvalued: sell a sliver of the position. Never sells out completely — a holder
+        // base that fully liquidates stops being a holder base.
+        const size = agent.shares * agent.trickleFrac;
+        return size >= MIN_ORDER ? [{ side: 'sell', size }] : [];
+      }
+      // Deeply undervalued: buy back with whatever cash the trimming raised.
+      const size = Math.min(agent.cash / price, agent.shares * agent.trickleFrac);
+      return size >= MIN_ORDER ? [{ side: 'buy', size }] : [];
+    }
     case 'indexFund': {
       // Inert between rebalances, and price-INELASTIC when it does trade: it moves toward
       // its mandate regardless of valuation, in small slices. This is deliberately boring —
@@ -600,6 +631,25 @@ export function explainDecision(agent: Agent, market: MarketState): DecisionExpl
         detail: v === 'hold' ? 'Price flat — nothing to re-hedge.'
           : shortGamma ? `Short gamma: price ${dS > 0 ? 'rose' : 'fell'} → ${v}s in the SAME direction, accelerating the move.`
           : `Long gamma: price ${dS > 0 ? 'rose' : 'fell'} → ${v}s AGAINST the move, pinning toward the strike.`,
+      };
+    }
+    case 'holder': {
+      const fair = market.fundamentalValue;
+      const premium = fair > 0 ? (price - fair) / fair : 0;
+      const v: Verdict = premium > agent.trimBand ? 'sell' : premium < -agent.trimBand ? 'buy' : 'hold';
+      return {
+        rule: 'Long-term retail holders — the long tail of small shareholders who own much of the free float and almost never trade. They only stir when the price gets far from fair value.',
+        signals: [
+          { label: 'Holds', value: agent.shares.toFixed(0), lean: 0 },
+          { label: 'Price vs fair', value: `${(premium * 100).toFixed(1)}%`, lean: premium > 0 ? 1 : premium < 0 ? -1 : 0 },
+          { label: 'Stirs beyond', value: `±${(agent.trimBand * 100).toFixed(0)}%`, lean: 0 },
+        ],
+        verdict: v,
+        detail: v === 'hold'
+          ? `Within ${(agent.trimBand * 100).toFixed(0)}% of fair value — simply holding, supplying no order flow.`
+          : v === 'sell'
+            ? `Euphoric (>${(agent.trimBand * 100).toFixed(0)}% above fair) → supplying a trickle of stock into the rally, ${(agent.trickleFrac * 100).toFixed(1)}% of the position at a time.`
+            : `Deeply undervalued → slowly buying back, ${(agent.trickleFrac * 100).toFixed(1)}% of the position at a time.`,
       };
     }
     case 'indexFund': {

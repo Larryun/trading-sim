@@ -268,6 +268,14 @@ into existence.
 - **Market maker** — provides liquidity and earns the spread (section 4). *Emergent
   effect:* tighter spreads, smoother fills, and a general damping of volatility.
 
+- **Long-term holders (retail)** — the long tail of small shareholders who together own a
+  large slice of the free float and almost never trade. They stir only when price gets far
+  from fair value (beyond ±25%), supplying a trickle of stock into euphoric rallies and
+  slowly buying back after crashes — retail is where shares come from in a bubble.
+  *Why they exist:* without them the entire float belongs to a handful of big funds, so one
+  cohort inevitably looks like it owns the company. Real free float is not concentrated that
+  way, and the percentages have to add to 100 — a missing holder base shows up as everyone
+  else looking implausibly large.
 - **Index / passive fund** — holds a large, largely **inert** block and is
   **price-inelastic**: it trades because money flowed into or out of the fund, not because
   the stock is cheap, and only on a slow rebalancing schedule. Crucially its mandate is a

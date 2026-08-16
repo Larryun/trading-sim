@@ -90,6 +90,25 @@ const SHORT_COLLATERAL = 1; // short exposure may reach this * EQUITY (not cash 
 const MAINT_MARGIN = 0.25; // margin call when equity falls below this * short exposure
 
 /**
+ * The largest slice of the company any ONE active fund will accumulate.
+ *
+ * Real funds don't quietly buy a majority of a business: diversification rules cap how much
+ * of a single issuer they hold, and crossing ~5%/10% triggers disclosure and control
+ * questions that turn a passive position into an activist campaign. Without a limit here, a
+ * cohort whose capital rivals the whole market cap just buys most of the float and the
+ * "market" becomes a few funds holding everything.
+ *
+ * Deliberately set as a loose BACKSTOP, not a working constraint. A tight cap (10%) starves
+ * price discovery: capped-out value funds can no longer buy when price falls below fair, so
+ * nothing arbitrages the gap and tracking error blew out to 70-80%. The realistic fix for
+ * concentration is a float with many owners, not a leash on the informed traders.
+ *
+ * Index funds and the retail holder base are EXEMPT: they legitimately hold large stakes and
+ * are already bounded by their own mandates.
+ */
+const AGENT_MAX_OWNERSHIP = 0.2;
+
+/**
  * How much MORE the account may sell short, in shares.
  *
  * Sized against EQUITY, never against cash. A short sale PAYS you the proceeds, so cash
@@ -250,7 +269,7 @@ export class SimulationEngine {
   optionsDealer: AgentAccount = { startingCapital: 0, cash: 0, shares: 0, avgCost: 0, realizedPnl: 0, tradeCount: 0 };
 
   private nextAgentNum: Record<AgentType, number> = {
-    noise: 0, marketMaker: 0, fomoHerd: 0, whale: 0, panicSeller: 0, trader: 0, dealer: 0, speculator: 0, indexFund: 0,
+    noise: 0, marketMaker: 0, fomoHerd: 0, whale: 0, panicSeller: 0, trader: 0, dealer: 0, speculator: 0, indexFund: 0, holder: 0,
   };
   private nextAgentId = 1;
 
@@ -1064,10 +1083,16 @@ export class SimulationEngine {
       let availShares = agent.shares;
       const maxShort = CAN_SHORT.has(agent.type) ? shortCapacity(agent, px) : 0;
 
+      // Concentration limit: how much more of the company this fund may still buy.
+      const ownRoom = agent.type === 'indexFund' || agent.type === 'holder'
+        ? Infinity
+        : Math.max(0, AGENT_MAX_OWNERSHIP * this.sharesOutstanding - agent.shares);
+
       const risk = this.updateRiskScale(agent, px); // de-risked after losses, restored on recovery
       for (const intent of intents) {
         let size = intent.size * risk;
         if (intent.side === 'buy') {
+          size = Math.min(size, ownRoom);
           if (intent.limitPrice != null) {
             size = Math.min(size, intent.limitPrice > 0 ? availCash / (intent.limitPrice * (1 + this.feeBps / 10000)) : 0);
           } else {
