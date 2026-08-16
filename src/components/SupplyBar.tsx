@@ -29,10 +29,12 @@ export function SupplyBar({ floatBreakdown }: Props) {
           <div style={{ width: `${Math.max(0, pct(dealer))}%`, background: '#eab308' }} title={`Options dealer (hedge inventory): ${fmt(dealer)}`} />
           <div style={{ width: `${Math.max(0, pct(user))}%`, background: colors.user }} title={`You: ${fmt(user)}`} />
         </div>
-        <div style={{ display: 'flex', gap: 14, fontSize: 11, color: colors.muted, marginTop: 4, flexWrap: 'wrap', ...tabularNums }}>
-          <span><span style={{ color: '#60a5fa' }}>■</span> agents {fmt(agents)} ({pct(agents).toFixed(0)}%)</span>
-          {Math.abs(dealer) > 0.01 && <span><span style={{ color: '#eab308' }}>■</span> dealer {fmt(dealer)} ({pct(dealer).toFixed(1)}%)</span>}
-          <span><span style={{ color: colors.user }}>■</span> you {fmt(user)} ({pct(user).toFixed(1)}%)</span>
+        {/* Fixed grid slots so the legend doesn't reflow between one and two lines as the
+            numbers gain/lose digits. */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '2px 12px', fontSize: 11, color: colors.muted, marginTop: 4, ...tabularNums }}>
+          <span style={{ whiteSpace: 'nowrap' }}><span style={{ color: '#60a5fa' }}>■</span> agents {fmt(agents)} ({pct(agents).toFixed(0)}%)</span>
+          {Math.abs(dealer) > 0.01 && <span style={{ whiteSpace: 'nowrap' }}><span style={{ color: '#eab308' }}>■</span> dealer {fmt(dealer)} ({pct(dealer).toFixed(1)}%)</span>}
+          <span style={{ whiteSpace: 'nowrap' }}><span style={{ color: colors.user }}>■</span> you {fmt(user)} ({pct(user).toFixed(1)}%)</span>
         </div>
       </div>
     </div>

@@ -266,17 +266,20 @@ into existence.
   by default.) Note it never asks whether an option is *cheap* — like real retail option
   buyers it pays the variance risk premium, so it loses on average.
 
-- **Options dealer** — doesn't bet on direction; it **delta-hedges** an options book,
-  trading only to stay neutral (`Δhedge ≈ −gamma × Δprice`). When **short gamma** (the
-  default) it must **buy as price rises and sell as it falls**, an accelerant — one of
-  the biggest real intraday forces (a **gamma squeeze**), and it chains with the short
-  buy-in cascade below. When **long gamma** it fades moves, **pinning** price toward
-  the option strike. *Emergent effect:* amplified breakouts / crashes, or pinning near
-  a strike, depending on its positioning.
+- **Gamma squeeze (test)** — a **test harness, not a market participant.** It simulates a
+  large options book and delta-hedges it aggressively (`Δhedge ≈ −gamma × Δprice`) so the
+  mechanism is obvious. Don't confuse it with the *real* dealer of the options market
+  (section 11), which is built in, arises from actual open interest, and is deliberately
+  bounded. Use this one to **stress-test** the effect: **negative gamma** (the default)
+  makes it buy rallies and sell dips, amplifying moves — about **3× volatility** at the
+  default settings, and it chains with the short buy-in cascade below. **Positive gamma**
+  fades moves and **pins** price toward the strike. It has no position limit and hedges
+  with market orders, so a very large book can overwhelm the order book — which is rather
+  the point of a stress test.
 
 > All of these are implemented and can be added, removed, and tuned live from the
 > Agents panel: **noise, market maker, FOMO herd, whale, panic seller, options
-> dealer, options speculator**, and the **Trader** (with the Value / Trend /
+> speculator, gamma squeeze (test)**, and the **Trader** (with the Value / Trend /
 > Contrarian / News / Balanced / Adaptive styles). The **Agent Decisions** view
 > explains what each one would do right now and why.
 
@@ -466,8 +469,10 @@ Change who's in the room, and you change the market's entire personality.
 The **Options** tab is a real, live options market (on by default), and it exists to
 teach one of the biggest forces in modern markets: **derivatives moving the underlying**.
 
-**The chain.** A rolling set of calls and puts at strikes around spot, priced with
-**Black-Scholes**. Two inputs are derived from the market rather than hardcoded:
+**The chain.** Calls and puts at strikes around spot across **three expiries at once**
+(~a month / a quarter / half a year), priced with **Black-Scholes**. Each series expires
+on its own clock and is replaced by a new far-dated one, so short-dated high-gamma
+lottery tickets and slow-decaying long-dated options are always both available. Two inputs are derived from the market rather than hardcoded:
 - **Implied volatility** tracks recent *realized* movement plus a **variance risk
   premium** (~1.25×) — the reason option *sellers* earn money on average.
 - The pricing **rate** is the market's recent **drift**, so options are priced off the
@@ -551,9 +556,10 @@ own orders. Then try:
    **trend** traders to pile on).
 4. Watch **Dealer hedge** climb on the Options tab: short gamma forces the dealer to buy
    the rally, which lifts price, which raises its delta again.
-5. For a deliberately dramatic version, add the **Options dealer** *agent* with a strongly
-   negative **Net gamma** and large **Open interest** — a synthetic-gamma demo that isn't
-   bound by the real market's caps.
+5. For a deliberately dramatic version, add the **Gamma squeeze (test)** agent — its
+   defaults already simulate a large short-gamma book (~3× volatility) and it isn't bound
+   by the real market's caps. Raise **Open interest** for more violence, or flip **Net
+   gamma** positive to watch price get **pinned** to the strike instead.
 
 ---
 

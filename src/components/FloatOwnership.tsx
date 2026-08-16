@@ -47,10 +47,16 @@ export function FloatOwnership({
           <div key={s.label} style={{ width: `${pct(s.shares)}%`, background: s.color }} title={`${s.label}: ${Math.round(s.shares).toLocaleString()} (${pct(s.shares).toFixed(1)}%)`} />
         ))}
       </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', fontSize: 11, color: colors.muted, marginTop: 6, ...tabularNums }}>
+      {/* Fixed-width GRID slots, not flex-wrap: with wrapping, an item jumps between one
+          and two lines every time a percentage gains or loses a digit, so the legend
+          visibly jitters as the market moves. Tabular figures keep each number's width
+          constant too. */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '3px 12px', fontSize: 11, color: colors.muted, marginTop: 6, ...tabularNums }}>
         {shown.map((s) => (
-          <span key={s.label}>
-            <span style={{ color: s.color }}>■</span> {s.label} {pct(s.shares).toFixed(1)}%
+          <span key={s.label} style={{ display: 'flex', gap: 5, alignItems: 'baseline', minWidth: 0 }} title={`${s.label}: ${Math.round(s.shares).toLocaleString()}`}>
+            <span style={{ color: s.color, flex: '0 0 auto' }}>■</span>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.label}</span>
+            <span style={{ marginLeft: 'auto', flex: '0 0 auto', color: colors.text }}>{pct(s.shares).toFixed(1)}%</span>
           </span>
         ))}
       </div>

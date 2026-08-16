@@ -40,7 +40,7 @@ export const AGENT_TYPE_LABELS: Record<AgentType, string> = {
   whale: 'Institution / whale',
   panicSeller: 'Panic seller',
   trader: 'Trader',
-  dealer: 'Options dealer',
+  dealer: 'Gamma squeeze (test)',
   speculator: 'Options speculator',
 };
 
@@ -179,9 +179,14 @@ export function createAgent(
     case 'panicSeller':
       return { id, name, type, peakWindow: 15, panicThreshold: 0.06, capitulationDD: 0.15, baseDumpFrac: 0.4, sentPanic: 0.6, reentryFrac: 0.3, activity: 0.7, takeProfit: 0, stopLoss: 0, ...account };
     case 'dealer':
-      // Short gamma by default (the destabilizing case): hedges by buying rallies /
-      // selling dips. Strike defaults to the current price (a "call wall" nearby).
-      return { id, name, type, netGamma: -0.6, openInterest: 1500, strike: startingPrice, activity: 0.95, takeProfit: 0, stopLoss: 0, ...account };
+      // A TEST HARNESS for gamma squeezes, not a market participant: it fakes a large
+      // short-gamma options book and hedges it aggressively (market orders, every tick,
+      // no position limit), which is exactly what makes a squeeze dramatic and visible.
+      // The real options market's dealer is deliberately bounded; this one is not.
+      // Defaults are tuned to produce a clearly visible squeeze as soon as it's added:
+      // strongly short gamma, a big book, and a strike right at the current price so
+      // gamma is negative on any move up.
+      return { id, name, type, netGamma: -1, openInterest: 3000, strike: startingPrice, activity: 0.95, takeProfit: 0, stopLoss: 0, ...account };
     case 'speculator':
       // Expresses a directional view through options: buys calls when bullish, puts
       // when bearish (handled in the engine — only when the options market is enabled).
@@ -524,7 +529,7 @@ export function explainDecision(agent: Agent, market: MarketState): DecisionExpl
       const hedge = -effGamma * dS * agent.openInterest;
       const v: Verdict = Math.abs(hedge) < 0.01 ? 'hold' : hedge > 0 ? 'buy' : 'sell';
       return {
-        rule: 'Options dealer hedging its book — trades to stay delta-neutral. Short gamma → buys rallies & sells dips (amplifies moves = gamma squeeze); long gamma → fades them (pins price to the strike).',
+        rule: 'TEST TOOL — simulates a large short-gamma options book and hedges it aggressively, to make gamma squeezes obvious. Short gamma → buys rallies & sells dips (amplifies moves); long gamma → fades them (pins price to the strike). The real options market has its own bounded dealer.',
         signals: [
           { label: 'Gamma', value: `${effGamma >= 0 ? '+' : ''}${effGamma.toFixed(2)} (${shortGamma ? 'short' : 'long'})`, lean: 0 },
           { label: 'vs strike', value: `$${agent.strike.toFixed(0)} (${price >= agent.strike ? 'above' : 'below'})`, lean: 0 },
