@@ -104,27 +104,26 @@ export function TradingView() {
         </div>
       )}
 
-      {/* Share supply */}
-      <div style={{ ...panel, marginBottom: 10 }}>
-        <SupplyBar floatBreakdown={sim.floatBreakdown} />
-      </div>
-
-      {/* Who owns the float? — ownership by strategy */}
-      <div style={{ ...panel, marginBottom: 10 }}>
-        <h4 style={{ margin: '0 0 8px', fontSize: 13, color: '#ccc' }}>Who owns the float?</h4>
-        <FloatOwnership agents={sim.agents} totalFloat={sim.floatBreakdown.total} userShares={sim.user.shares} />
-      </div>
-
       {/* Charts: price on top, buy/sell order flow below */}
-      <div style={{ ...panel, marginBottom: 10 }}>
+      <div style={{ ...panel, marginBottom: 8 }}>
+        <SectionHeaderRow right={<span style={{ fontSize: 10, color: colors.muted }}>{sim.barInterval}t bars</span>}>Price &amp; Volume</SectionHeaderRow>
         {sim.chartType === 'candle' ? <CandleChart bars={sim.bars} /> : <PriceChart bars={sim.bars} />}
-        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #2a2a3a' }}>
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${colors.border}` }}>
           <VolumeChart volumeBars={sim.volumeBars} />
         </div>
       </div>
 
+      {/* Share supply + ownership by strategy */}
+      <div style={{ ...panel, marginBottom: 8 }}>
+        <SectionHeaderRow>Share supply &amp; ownership</SectionHeaderRow>
+        <SupplyBar floatBreakdown={sim.floatBreakdown} />
+        <div style={{ marginTop: 10 }}>
+          <FloatOwnership agents={sim.agents} totalFloat={sim.floatBreakdown.total} userShares={sim.user.shares} />
+        </div>
+      </div>
+
       {/* Agents + trade panel */}
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 10, marginBottom: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 2fr) minmax(300px, 1fr)', gap: 8, marginBottom: 8 }}>
         <div style={panel}>
           <AgentListPanel
             agents={sim.agents}
@@ -162,12 +161,12 @@ export function TradingView() {
       </div>
 
       {/* User order history */}
-      <div style={{ ...panel, marginBottom: 10 }}>
+      <div style={{ ...panel, marginBottom: 8 }}>
         <UserOrderHistory orders={sim.userOrders} />
       </div>
 
       {/* News/sentiment + trade log */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
         <div style={panel}>
           <NewsFeed
             sentimentSeries={sim.sentimentSeries}
