@@ -34,7 +34,7 @@ export function TradingQueue({ orders, onCancel }: { orders: RestingUserOrder[];
                 {o.side.toUpperCase()} {o.kind === 'stop' ? 'STOP' : 'LIMIT'}
               </span>
               <span style={{ flex: 1, textAlign: 'right', color: colors.text }}>${o.price.toFixed(2)}</span>
-              <span style={{ flex: 1, textAlign: 'right', color: '#ccc' }}>{o.size.toFixed(0)}</span>
+              <span style={{ flex: 1, textAlign: 'right', color: colors.text }}>{o.size.toFixed(0)}</span>
             </div>
           ))}
         </div>

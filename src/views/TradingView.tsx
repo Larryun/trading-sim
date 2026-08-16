@@ -21,10 +21,10 @@ const toggleBtn = (active: boolean): React.CSSProperties => ({
   fontSize: 12,
   fontWeight: 600,
   borderRadius: 6,
-  border: '1px solid #333',
+  border: `1px solid ${colors.border}`,
   cursor: 'pointer',
-  background: active ? '#2563eb' : '#0f0f1e',
-  color: active ? '#fff' : '#aaa',
+  background: active ? colors.accent : colors.bg0,
+  color: active ? '#fff' : colors.muted,
 });
 
 export function TradingView() {
@@ -80,7 +80,7 @@ export function TradingView() {
 
         <button style={toggleBtn(showParams)} onClick={() => setShowParams((s) => !s)}>Parameters {showParams ? '▲' : '▾'}</button>
 
-        <span style={{ ...tabularNums, marginLeft: 'auto', fontSize: 11, color: '#777' }} title="Average compute time of one simulation tick">
+        <span style={{ ...tabularNums, marginLeft: 'auto', fontSize: 11, color: colors.muted }} title="Average compute time of one simulation tick">
           {sim.stepMs.toFixed(2)} ms/tick
         </span>
       </div>
@@ -175,7 +175,7 @@ export function TradingView() {
             triggerEvent={sim.triggerEvent}
             toggleAutoNews={sim.toggleAutoNews}
           />
-          <div style={{ borderTop: '1px solid #2a2a3a', marginTop: 10, paddingTop: 10 }}>
+          <div style={{ borderTop: `1px solid ${colors.border}`, marginTop: 10, paddingTop: 10 }}>
             <SentimentBreakdown
               breakdown={sim.sentimentBreakdown}
               recentPrices={sim.recentPrices}

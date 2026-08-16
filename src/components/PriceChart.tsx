@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import type { Bar } from '../sim/bars';
 import { useContainerWidth } from './useContainerWidth';
+import { colors, tabularNums, mono } from '../ui';
 
 interface Props {
   bars: Bar[];
@@ -40,12 +41,12 @@ export const PriceChart = memo(function PriceChart({ bars }: Props) {
           const yy = y(t);
           return (
             <g key={i}>
-              <line x1={PAD_L} y1={yy} x2={width - PAD_R} y2={yy} stroke="#2a2a3a" strokeDasharray="3 3" />
-              <text x={PAD_L - 6} y={yy + 3} textAnchor="end" fontSize={11} fill="#888">{t.toFixed(2)}</text>
+              <line x1={PAD_L} y1={yy} x2={width - PAD_R} y2={yy} stroke={colors.border} strokeDasharray="3 3" />
+              <text x={PAD_L - 6} y={yy + 3} textAnchor="end" fontSize={11} fill={colors.muted} style={{ fontFamily: mono, ...tabularNums }}>{t.toFixed(2)}</text>
             </g>
           );
         })}
-        {bars.length > 1 && <polyline points={points} fill="none" stroke="#4ade80" strokeWidth={2} />}
+        {bars.length > 1 && <polyline points={points} fill="none" stroke={colors.up} strokeWidth={2} />}
       </svg>
     </div>
   );

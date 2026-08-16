@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router-dom';
+import { colors } from '../ui';
 
 const link = (active: boolean): React.CSSProperties => ({
   padding: '6px 14px',
@@ -6,14 +7,14 @@ const link = (active: boolean): React.CSSProperties => ({
   fontSize: 13,
   fontWeight: 600,
   textDecoration: 'none',
-  color: active ? '#fff' : '#aaa',
-  background: active ? '#2563eb' : '#16162a',
-  border: '1px solid #2a2a3a',
+  color: active ? '#fff' : colors.muted,
+  background: active ? colors.accent : colors.bg1,
+  border: `1px solid ${colors.border}`,
 });
 
 export function NavBar() {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '14px 20px 0', color: '#e5e5e5', fontFamily: 'system-ui, sans-serif' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '14px 20px 0', color: colors.text }}>
       <h1 style={{ margin: 0, fontSize: 18 }}>Trading Price Simulator</h1>
       <nav style={{ display: 'flex', gap: 8 }}>
         <NavLink to="/" end style={({ isActive }) => link(isActive)}>Market</NavLink>

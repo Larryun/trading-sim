@@ -11,6 +11,11 @@ export const colors = {
   up: '#26a269',
   down: '#e5484d',
   accent: '#3b82f6',
+  warn: '#f59e0b', // amber: price-vs-fair gap, distribution risk, order-note warnings
+  warnBg: '#2a2410',
+  warnBorder: '#4a3f1a',
+  user: '#a78bfa', // the "You" highlight (rows, swatches, order-book marker)
+  raised: '#2e2e44', // active/pressed surface for toggle chips & gear buttons
 };
 
 export const mono = "'SF Mono', ui-monospace, 'Cascadia Code', Menlo, Consolas, monospace";

@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { agentColor, agentStyleLabel } from '../sim/agents';
 import type { Agent } from '../sim/types';
+import { colors, tabularNums } from '../ui';
 
 interface Segment {
   label: string;
@@ -32,7 +33,7 @@ export function FloatOwnership({
       m.set(key, seg);
     }
     const list = [...m.values()].sort((x, y) => y.shares - x.shares);
-    list.push({ label: 'You', shares: userShares, color: '#a78bfa' });
+    list.push({ label: 'You', shares: userShares, color: colors.user });
     return list;
   }, [agents, userShares]);
 
@@ -41,12 +42,12 @@ export function FloatOwnership({
 
   return (
     <div>
-      <div style={{ display: 'flex', height: 16, borderRadius: 6, overflow: 'hidden', border: '1px solid #2a2a3a' }}>
+      <div style={{ display: 'flex', height: 16, borderRadius: 6, overflow: 'hidden', border: `1px solid ${colors.border}` }}>
         {shown.map((s) => (
           <div key={s.label} style={{ width: `${pct(s.shares)}%`, background: s.color }} title={`${s.label}: ${Math.round(s.shares).toLocaleString()} (${pct(s.shares).toFixed(1)}%)`} />
         ))}
       </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', fontSize: 11, color: '#888', marginTop: 6 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', fontSize: 11, color: colors.muted, marginTop: 6, ...tabularNums }}>
         {shown.map((s) => (
           <span key={s.label}>
             <span style={{ color: s.color }}>■</span> {s.label} {pct(s.shares).toFixed(1)}%

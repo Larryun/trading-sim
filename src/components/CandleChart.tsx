@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import type { Bar } from '../sim/bars';
+import { colors, tabularNums, mono } from '../ui';
 
 interface Props {
   bars: Bar[];
@@ -10,8 +11,8 @@ const PAD_LEFT = 56;
 const PAD_RIGHT = 12;
 const PAD_TOP = 10;
 const PAD_BOTTOM = 20;
-const UP = '#4ade80';
-const DOWN = '#f87171';
+const UP = colors.up;
+const DOWN = colors.down;
 
 export const CandleChart = memo(function CandleChart({ bars }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -56,8 +57,8 @@ export const CandleChart = memo(function CandleChart({ bars }: Props) {
           const y = yScale(price);
           return (
             <g key={i}>
-              <line x1={PAD_LEFT} y1={y} x2={width - PAD_RIGHT} y2={y} stroke="#2a2a3a" strokeDasharray="3 3" />
-              <text x={PAD_LEFT - 6} y={y + 3} textAnchor="end" fontSize={11} fill="#888">
+              <line x1={PAD_LEFT} y1={y} x2={width - PAD_RIGHT} y2={y} stroke={colors.border} strokeDasharray="3 3" />
+              <text x={PAD_LEFT - 6} y={y + 3} textAnchor="end" fontSize={11} fill={colors.muted} style={{ fontFamily: mono, ...tabularNums }}>
                 {price.toFixed(2)}
               </text>
             </g>

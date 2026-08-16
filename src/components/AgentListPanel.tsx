@@ -110,7 +110,7 @@ export function AgentListPanel({ agents, currentPrice, addAgent, removeAgent, up
         return (
           <div key={type} style={{ marginBottom: 6 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: colors.muted, textTransform: 'uppercase', letterSpacing: 0.4, padding: '4px 4px 2px' }}>
-              {AGENT_TYPE_LABELS[type]} <span style={{ color: '#555' }}>· {group.length}</span>
+              {AGENT_TYPE_LABELS[type]} <span style={{ color: colors.muted }}>· {group.length}</span>
             </div>
             {group.map((agent) => (
               <AgentRow
@@ -145,9 +145,9 @@ function AgentRow({ agent, currentPrice, spark, expanded, onToggle, onRemove, on
           <span style={{ color: agentColor(agent), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{agent.name}</span>
         </span>
         <span style={{ textAlign: 'right', color: agent.shares < 0 ? colors.down : '#ccc' }}>{agent.shares.toFixed(0)}</span>
-        <span style={{ textAlign: 'right', color: '#ccc' }}>${(equity / 1000).toFixed(1)}k</span>
+        <span style={{ textAlign: 'right', color: colors.text }}>${(equity / 1000).toFixed(1)}k</span>
         <span style={{ textAlign: 'right', color: pnlColor(totalPnl) }}>{fmtMoney(totalPnl)}</span>
-        <span style={{ textAlign: 'right', color: '#888' }}>{agent.tradeCount}</span>
+        <span style={{ textAlign: 'right', color: colors.muted }}>{agent.tradeCount}</span>
         <span style={{ display: 'flex', justifyContent: 'center' }}><Sparkline data={spark} width={58} height={18} /></span>
         <span style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
           <button onClick={onToggle} title="Parameters" style={{ background: expanded ? '#2e2e44' : 'transparent', border: `1px solid ${colors.border}`, color: '#aaa', borderRadius: 4, fontSize: 10, padding: '1px 5px', cursor: 'pointer' }}>⚙</button>
@@ -248,9 +248,9 @@ function Slider({ label, value, min, max, step, onChange, format }: {
   const help = PARAM_HELP[label];
   return (
     <label style={{ display: 'block', marginBottom: 6, fontSize: 11 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2, color: '#bbb' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2, color: colors.muted }}>
         {help ? <span className="param-tip" data-tip={help}>{label}</span> : <span>{label}</span>}
-        <span style={{ color: '#eee', ...tabularNums }}>{format ? format(value) : value}</span>
+        <span style={{ color: colors.text, ...tabularNums }}>{format ? format(value) : value}</span>
       </div>
       <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} style={{ width: '100%' }} />
     </label>
@@ -262,7 +262,7 @@ type TraderAgent = Extract<Agent, { type: 'trader' }>;
 function StylePicker({ agent, onUpdate }: { agent: TraderAgent; onUpdate: (patch: Record<string, unknown>) => void }) {
   return (
     <label style={{ display: 'block', marginBottom: 6, fontSize: 11 }}>
-      <div style={{ marginBottom: 2, color: '#bbb' }}><span className="param-tip" data-tip={PARAM_HELP['Style']}>Style</span></div>
+      <div style={{ marginBottom: 2, color: colors.muted }}><span className="param-tip" data-tip={PARAM_HELP['Style']}>Style</span></div>
       <select
         value={agent.style}
         onChange={(e) => {

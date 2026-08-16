@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import type { SentimentPoint } from '../hooks/useSimulation';
 import { useContainerWidth } from './useContainerWidth';
+import { colors, mono } from '../ui';
 
 interface Props {
   series: SentimentPoint[];
@@ -33,12 +34,12 @@ export const SentimentChart = memo(function SentimentChart({ series }: Props) {
           const yy = y(t);
           return (
             <g key={i}>
-              <line x1={PAD_L} y1={yy} x2={width - PAD_R} y2={yy} stroke={t === 0 ? '#555' : '#2a2a3a'} strokeDasharray={t === 0 ? undefined : '3 3'} />
-              <text x={PAD_L - 6} y={yy + 3} textAnchor="end" fontSize={11} fill="#888">{t.toFixed(1)}</text>
+              <line x1={PAD_L} y1={yy} x2={width - PAD_R} y2={yy} stroke={colors.border} strokeDasharray={t === 0 ? undefined : '3 3'} />
+              <text x={PAD_L - 6} y={yy + 3} textAnchor="end" fontSize={11} fontFamily={mono} fill={colors.muted}>{t.toFixed(1)}</text>
             </g>
           );
         })}
-        {series.length > 1 && <polyline points={points} fill="none" stroke="#34d399" strokeWidth={2} />}
+        {series.length > 1 && <polyline points={points} fill="none" stroke={colors.accent} strokeWidth={2} />}
       </svg>
     </div>
   );

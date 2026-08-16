@@ -3,6 +3,8 @@ import type { RestingOrder, Side, Trade } from './types';
 let nextOrderId = 1;
 let nextTradeId = 1;
 
+const MAX_STOPS = 200; // cap on resting stop orders (matches the userOrders history cap)
+
 // Real exchanges quote on a fixed price grid (a "tick size"), not a continuum.
 // Snapping resting prices to this grid keeps the book to discrete, distinct price
 // levels at any price scale and makes depth aggregation exact (no float-key noise).
@@ -117,6 +119,10 @@ export class OrderBook {
   /** Rest a stop order: dormant until `stopPrice` is crossed (see popTriggeredStops). */
   submitStopOrder(side: Side, size: number, stopPrice: number, ownerId: string): void {
     this.stops.push({ side, size, stopPrice: roundToTick(stopPrice), ownerId, id: nextOrderId++ });
+    // Cap like the other lists: a resting stop whose trigger is never crossed and is
+    // never cancelled would otherwise accumulate forever (drop the oldest). Stops are
+    // user-placed only, so 200 is generous.
+    if (this.stops.length > MAX_STOPS) this.stops = this.stops.slice(-MAX_STOPS);
   }
 
   /**

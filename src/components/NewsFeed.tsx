@@ -1,5 +1,7 @@
 import { SentimentChart } from './SentimentChart';
 import type { SentimentPoint } from '../hooks/useSimulation';
+import { colors, tabularNums, pnlColor } from '../ui';
+import { SectionHeaderRow } from './kit';
 
 interface Props {
   sentimentSeries: SentimentPoint[];
@@ -22,25 +24,24 @@ const newsBtn = (bg: string): React.CSSProperties => ({
 });
 
 export function NewsFeed({ sentimentSeries, sentiment, autoNews, triggerEvent, toggleAutoNews }: Props) {
-  const sentColor = sentiment > 0.05 ? '#4ade80' : sentiment < -0.05 ? '#f87171' : '#888';
+  const sentColor = pnlColor(sentiment, 0.05);
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <h3 style={{ margin: 0, fontSize: 15 }}>News &amp; Sentiment</h3>
-        <label style={{ fontSize: 12, color: '#aaa', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+      <SectionHeaderRow right={
+        <label style={{ fontSize: 12, color: colors.muted, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
           <input type="checkbox" checked={autoNews} onChange={toggleAutoNews} />
           Auto events
         </label>
-      </div>
+      }>News &amp; Sentiment</SectionHeaderRow>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-        <button style={newsBtn('#16a34a')} onClick={() => triggerEvent(1)}>📈 Good news</button>
-        <button style={newsBtn('#dc2626')} onClick={() => triggerEvent(-1)}>📉 Bad news</button>
+        <button style={newsBtn(colors.up)} onClick={() => triggerEvent(1)}>📈 Good news</button>
+        <button style={newsBtn(colors.down)} onClick={() => triggerEvent(-1)}>📉 Bad news</button>
       </div>
 
-      <div style={{ fontSize: 12, color: '#888', marginBottom: 2 }}>
-        current sentiment <span style={{ color: sentColor, fontWeight: 600 }}>{sentiment.toFixed(2)}</span>
+      <div style={{ fontSize: 12, color: colors.muted, marginBottom: 2 }}>
+        current sentiment <span style={{ ...tabularNums, color: sentColor, fontWeight: 600 }}>{sentiment.toFixed(2)}</span>
       </div>
       <SentimentChart series={sentimentSeries} />
     </div>

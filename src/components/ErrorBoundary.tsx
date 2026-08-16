@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { colors } from '../ui';
 
 interface Props {
   children: ReactNode;
@@ -23,15 +24,15 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.error) {
       return (
-        <div style={{ maxWidth: 600, margin: '80px auto', padding: 24, fontFamily: 'system-ui, sans-serif', color: '#e5e5e5' }}>
+        <div style={{ maxWidth: 600, margin: '80px auto', padding: 24, color: colors.text }}>
           <h2 style={{ marginTop: 0 }}>Something went wrong</h2>
-          <p style={{ color: '#aaa' }}>The simulator hit a rendering error. Reload to start a fresh market.</p>
-          <pre style={{ background: '#0f0f1e', border: '1px solid #2a2a3a', borderRadius: 8, padding: 12, fontSize: 12, overflow: 'auto', color: '#f87171' }}>
+          <p style={{ color: colors.muted }}>The simulator hit a rendering error. Reload to start a fresh market.</p>
+          <pre style={{ background: colors.bg0, border: `1px solid ${colors.border}`, borderRadius: 8, padding: 12, fontSize: 12, overflow: 'auto', color: colors.down }}>
             {this.state.error.message}
           </pre>
           <button
             onClick={() => window.location.reload()}
-            style={{ background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, padding: '8px 16px', fontWeight: 600, cursor: 'pointer' }}
+            style={{ background: colors.accent, color: '#fff', border: 'none', borderRadius: 6, padding: '8px 16px', fontWeight: 600, cursor: 'pointer' }}
           >
             Reload
           </button>

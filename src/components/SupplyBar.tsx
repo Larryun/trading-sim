@@ -1,4 +1,5 @@
 import type { FloatBreakdown } from '../hooks/useSimulation';
+import { colors, tabularNums } from '../ui';
 
 interface Props {
   floatBreakdown: FloatBreakdown;
@@ -14,20 +15,20 @@ export function SupplyBar({ floatBreakdown }: Props) {
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
-      <div style={{ fontSize: 13, color: '#bbb' }}>
-        Shares outstanding <span style={{ color: '#eee', fontWeight: 600 }}>{fmt(total)}</span>
-        <span style={{ color: '#666', marginLeft: 8, fontSize: 11 }}>(held entirely by participants — no backstop)</span>
+      <div style={{ fontSize: 13, color: colors.muted }}>
+        Shares outstanding <span style={{ color: colors.text, fontWeight: 600, ...tabularNums }}>{fmt(total)}</span>
+        <span style={{ color: colors.muted, marginLeft: 8, fontSize: 11 }}>(held entirely by participants — no backstop)</span>
       </div>
 
       {/* Ownership breakdown bar: agents vs you */}
       <div style={{ flex: 1, minWidth: 220 }}>
-        <div style={{ display: 'flex', height: 12, borderRadius: 6, overflow: 'hidden', border: '1px solid #2a2a3a' }}>
+        <div style={{ display: 'flex', height: 12, borderRadius: 6, overflow: 'hidden', border: `1px solid ${colors.border}` }}>
           <div style={{ width: `${pct(agents)}%`, background: '#60a5fa' }} title={`Agents: ${fmt(agents)}`} />
-          <div style={{ width: `${pct(user)}%`, background: '#a78bfa' }} title={`You: ${fmt(user)}`} />
+          <div style={{ width: `${pct(user)}%`, background: colors.user }} title={`You: ${fmt(user)}`} />
         </div>
-        <div style={{ display: 'flex', gap: 14, fontSize: 11, color: '#888', marginTop: 4 }}>
+        <div style={{ display: 'flex', gap: 14, fontSize: 11, color: colors.muted, marginTop: 4, ...tabularNums }}>
           <span><span style={{ color: '#60a5fa' }}>■</span> agents {fmt(agents)} ({pct(agents).toFixed(0)}%)</span>
-          <span><span style={{ color: '#a78bfa' }}>■</span> you {fmt(user)} ({pct(user).toFixed(1)}%)</span>
+          <span><span style={{ color: colors.user }}>■</span> you {fmt(user)} ({pct(user).toFixed(1)}%)</span>
         </div>
       </div>
     </div>

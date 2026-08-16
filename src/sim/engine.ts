@@ -343,7 +343,9 @@ export class SimulationEngine {
     this.user.cash -= premium; // buy pays premium; sell (q<0) receives it
     this.optionsDealer.cash += premium; // the dealer writes the other side
     this.userOptionCashFlow -= premium;
-    this.userOptions.set(contractId, held + q);
+    const net = held + q;
+    if (Math.abs(net) < 1e-9) this.userOptions.delete(contractId); // don't retain closed positions
+    else this.userOptions.set(contractId, net);
     this.lastOrderNote = `${q > 0 ? 'Bought' : 'Sold'} ${Math.abs(q)} ${c.strike} ${c.type} for $${Math.abs(premium).toFixed(0)}.`;
   }
 

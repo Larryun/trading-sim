@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useSim } from '../SimContext';
-import { panel, pageWrap } from '../ui';
+import { colors, tabularNums, pnlColor, fmtMoney, panel, pageWrap } from '../ui';
+import { Tile, Th, Td, SectionHeaderRow } from '../components/kit';
 import { useContainerWidth } from '../components/useContainerWidth';
 import { agentColor, agentStyleLabel } from '../sim/agents';
 import type { Agent } from '../sim/types';
@@ -53,17 +54,17 @@ export function StatsView() {
 
   return (
     <div style={pageWrap}>
-      <p style={{ margin: '0 0 16px', color: '#888', fontSize: 13 }}>
+      <p style={{ margin: '0 0 16px', color: colors.muted, fontSize: 13 }}>
         Live market analytics — how order flow, strategy mix, and money flows shape the price. Updates with the running market.
       </p>
 
       {/* Snapshot tiles */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
         <Tile label="Tick" value={tick.toLocaleString()} />
-        <Tile label="Price" value={`$${currentPrice.toFixed(2)}`} color="#4ade80" />
-        <Tile label={`Fair value (EPS×${valuationMultiple})`} value={`$${fundamentalValue.toFixed(2)}`} color="#22d3ee" />
-        <Tile label="EPS" value={`$${eps.toFixed(2)}`} color="#22d3ee" />
-        <Tile label="Price vs fair" value={`${gapPct >= 0 ? '+' : ''}${gapPct.toFixed(1)}%`} color={Math.abs(gapPct) < 5 ? '#4ade80' : '#f59e0b'} />
+        <Tile label="Price" value={`$${currentPrice.toFixed(2)}`} color={colors.up} />
+        <Tile label={`Fair value (EPS×${valuationMultiple})`} value={`$${fundamentalValue.toFixed(2)}`} color={colors.accent} />
+        <Tile label="EPS" value={`$${eps.toFixed(2)}`} color={colors.accent} />
+        <Tile label="Price vs fair" value={`${gapPct >= 0 ? '+' : ''}${gapPct.toFixed(1)}%`} color={Math.abs(gapPct) < 5 ? colors.up : colors.warn} />
         <Tile label="Spread" value={spread != null ? `$${spread.toFixed(2)}` : '—'} />
         <Tile label="Shares outstanding" value={Math.round(floatBreakdown.total).toLocaleString()} />
         <Tile label="Agents" value={String(agents.length)} />
@@ -73,27 +74,27 @@ export function StatsView() {
 
       {/* Cash flows */}
       <div style={{ ...panel, marginBottom: 16 }}>
-        <h3 style={{ margin: '0 0 10px', fontSize: 15 }}>Money flows (the market isn't a closed cash loop)</h3>
+        <SectionHeaderRow>Money flows (the market isn't a closed cash loop)</SectionHeaderRow>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
-          <Tile label="Dividends paid in" value={`+$${Math.round(totalDividendsPaid).toLocaleString()}`} color="#4ade80" />
-          <Tile label="Fees paid to broker" value={`-$${Math.round(totalFeesPaid).toLocaleString()}`} color="#f87171" />
+          <Tile label="Dividends paid in" value={`+$${Math.round(totalDividendsPaid).toLocaleString()}`} color={colors.up} />
+          <Tile label="Fees paid to broker" value={`-$${Math.round(totalFeesPaid).toLocaleString()}`} color={colors.down} />
           <Tile label="Net external cash" value={`${totalDividendsPaid - totalFeesPaid >= 0 ? '+' : '-'}$${Math.abs(Math.round(totalDividendsPaid - totalFeesPaid)).toLocaleString()}`} />
         </div>
       </div>
 
       {/* PnL by strategy */}
       <div style={{ ...panel, marginBottom: 16 }}>
-        <h3 style={{ margin: '0 0 10px', fontSize: 15 }}>Profit &amp; loss by strategy — who's winning?</h3>
+        <SectionHeaderRow>Profit &amp; loss by strategy — who's winning?</SectionHeaderRow>
         <PnlBars data={pnlData} />
       </div>
 
       {/* Per-strategy table */}
       <div style={panel}>
-        <h3 style={{ margin: '0 0 10px', fontSize: 15 }}>By strategy</h3>
+        <SectionHeaderRow>By strategy</SectionHeaderRow>
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, ...tabularNums }}>
             <thead>
-              <tr style={{ color: '#888', textAlign: 'right' }}>
+              <tr style={{ color: colors.muted, textAlign: 'right' }}>
                 <Th align="left">Strategy</Th><Th>Count</Th><Th>Shares</Th><Th>% float</Th><Th>Equity</Th><Th>Total PnL</Th><Th>Return</Th><Th>Realized</Th><Th>Unreal.</Th><Th>Trades</Th>
               </tr>
             </thead>
@@ -102,31 +103,31 @@ export function StatsView() {
                 const pnl = r.equity - r.start;
                 const ret = r.start > 0 ? (r.equity / r.start - 1) * 100 : 0;
                 return (
-                  <tr key={r.key} style={{ borderTop: '1px solid #2a2a3a' }}>
+                  <tr key={r.key} style={{ borderTop: `1px solid ${colors.border}` }}>
                     <Td align="left"><span style={{ color: r.color, fontWeight: 600 }}>{r.label}</span></Td>
                     <Td>{r.count}</Td>
                     <Td>{Math.round(r.shares).toLocaleString()}</Td>
                     <Td>{floatBreakdown.total > 0 ? ((r.shares / floatBreakdown.total) * 100).toFixed(1) : '0'}%</Td>
                     <Td>${Math.round(r.equity).toLocaleString()}</Td>
-                    <Td color={pnl >= 0 ? '#4ade80' : '#f87171'}>{fmt(pnl)}</Td>
-                    <Td color={ret >= 0 ? '#4ade80' : '#f87171'}>{ret >= 0 ? '+' : ''}{ret.toFixed(1)}%</Td>
-                    <Td color={r.realized >= 0 ? '#4ade80' : '#f87171'}>{fmt(r.realized)}</Td>
-                    <Td color={r.unrealized >= 0 ? '#4ade80' : '#f87171'}>{fmt(r.unrealized)}</Td>
+                    <Td color={pnlColor(pnl)}>{fmtMoney(pnl)}</Td>
+                    <Td color={pnlColor(ret)}>{ret >= 0 ? '+' : ''}{ret.toFixed(1)}%</Td>
+                    <Td color={pnlColor(r.realized)}>{fmtMoney(r.realized)}</Td>
+                    <Td color={pnlColor(r.unrealized)}>{fmtMoney(r.unrealized)}</Td>
                     <Td>{r.trades.toLocaleString()}</Td>
                   </tr>
                 );
               })}
               {/* You */}
-              <tr style={{ borderTop: '2px solid #3a3a4a' }}>
-                <Td align="left"><span style={{ color: '#a78bfa', fontWeight: 600 }}>You</span></Td>
+              <tr style={{ borderTop: `2px solid ${colors.border}` }}>
+                <Td align="left"><span style={{ color: colors.user, fontWeight: 600 }}>You</span></Td>
                 <Td>1</Td>
                 <Td>{Math.round(user.shares).toLocaleString()}</Td>
                 <Td>{floatBreakdown.total > 0 ? ((user.shares / floatBreakdown.total) * 100).toFixed(1) : '0'}%</Td>
                 <Td>${Math.round(userEquity).toLocaleString()}</Td>
-                <Td color={userEquity - user.startingCapital >= 0 ? '#4ade80' : '#f87171'}>{fmt(userEquity - user.startingCapital)}</Td>
-                <Td color={userEquity - user.startingCapital >= 0 ? '#4ade80' : '#f87171'}>{user.startingCapital > 0 ? `${((userEquity / user.startingCapital - 1) * 100).toFixed(1)}%` : '—'}</Td>
-                <Td color={user.realizedPnl >= 0 ? '#4ade80' : '#f87171'}>{fmt(user.realizedPnl)}</Td>
-                <Td color={user.shares * (currentPrice - user.avgCost) >= 0 ? '#4ade80' : '#f87171'}>{fmt(user.shares * (currentPrice - user.avgCost))}</Td>
+                <Td color={pnlColor(userEquity - user.startingCapital)}>{fmtMoney(userEquity - user.startingCapital)}</Td>
+                <Td color={pnlColor(userEquity - user.startingCapital)}>{user.startingCapital > 0 ? `${((userEquity / user.startingCapital - 1) * 100).toFixed(1)}%` : '—'}</Td>
+                <Td color={pnlColor(user.realizedPnl)}>{fmtMoney(user.realizedPnl)}</Td>
+                <Td color={pnlColor(user.shares * (currentPrice - user.avgCost))}>{fmtMoney(user.shares * (currentPrice - user.avgCost))}</Td>
                 <Td>{user.tradeCount.toLocaleString()}</Td>
               </tr>
             </tbody>
@@ -135,12 +136,6 @@ export function StatsView() {
       </div>
     </div>
   );
-}
-
-function fmt(v: number): string {
-  const abs = Math.abs(v);
-  const s = abs >= 1000 ? `${(abs / 1000).toFixed(1)}k` : abs.toFixed(0);
-  return `${v >= 0 ? '+' : '-'}$${s}`;
 }
 
 // Plain-SVG P&L-by-strategy bars (no charting lib), zero baseline in the middle.
@@ -158,37 +153,20 @@ function PnlBars({ data }: { data: { label: string; pnl: number }[] }) {
   return (
     <div ref={ref} style={{ width: '100%', height: H }}>
       <svg width={width} height={H}>
-        <line x1={0} y1={zeroY} x2={width} y2={zeroY} stroke="#555" />
+        <line x1={0} y1={zeroY} x2={width} y2={zeroY} stroke={colors.border} />
         {data.map((d, i) => {
           const cx = slot * (i + 0.5);
           const h = (Math.abs(d.pnl) / maxAbs) * (plotH / 2);
           const up = d.pnl >= 0;
           return (
             <g key={d.label}>
-              <rect x={cx - bw / 2} y={up ? zeroY - h : zeroY} width={bw} height={h} fill={up ? '#4ade80' : '#f87171'} />
-              <text x={cx} y={zeroY + (up ? 14 : -6)} textAnchor="middle" fontSize={9} fill="#aaa">{d.label.split(' ')[0]}</text>
-              <text x={cx} y={up ? zeroY - h - 3 : zeroY + h + 12} textAnchor="middle" fontSize={9} fill={up ? '#4ade80' : '#f87171'}>{fmt(d.pnl)}</text>
+              <rect x={cx - bw / 2} y={up ? zeroY - h : zeroY} width={bw} height={h} fill={pnlColor(d.pnl)} />
+              <text x={cx} y={zeroY + (up ? 14 : -6)} textAnchor="middle" fontSize={9} fill={colors.muted}>{d.label.split(' ')[0]}</text>
+              <text x={cx} y={up ? zeroY - h - 3 : zeroY + h + 12} textAnchor="middle" fontSize={9} fill={pnlColor(d.pnl)}>{fmtMoney(d.pnl)}</text>
             </g>
           );
         })}
       </svg>
     </div>
   );
-}
-
-function Tile({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (
-    <div style={{ ...panel, padding: 12 }}>
-      <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 18, fontWeight: 700, color: color ?? '#eee', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
-    </div>
-  );
-}
-
-function Th({ children, align = 'right' }: { children: React.ReactNode; align?: 'left' | 'right' }) {
-  return <th style={{ padding: '4px 8px', textAlign: align, fontWeight: 500 }}>{children}</th>;
-}
-
-function Td({ children, align = 'right', color }: { children: React.ReactNode; align?: 'left' | 'right'; color?: string }) {
-  return <td style={{ padding: '4px 8px', textAlign: align, color: color ?? '#ddd' }}>{children}</td>;
 }

@@ -28,7 +28,7 @@ interface Props {
 
 const chip = (active: boolean): React.CSSProperties => ({
   flex: 1, padding: '5px 0', fontSize: 11, borderRadius: 5, border: `1px solid ${colors.border}`,
-  cursor: 'pointer', textTransform: 'capitalize', background: active ? '#2e2e44' : colors.bg2, color: active ? '#fff' : '#aaa',
+  cursor: 'pointer', textTransform: 'capitalize', background: active ? colors.raised : colors.bg2, color: active ? '#fff' : colors.muted,
 });
 const bigBtn = (bg: string): React.CSSProperties => ({
   flex: 1, padding: '9px 0', fontSize: 14, fontWeight: 700, border: 'none', borderRadius: 6, cursor: 'pointer', color: '#fff', background: bg,
@@ -95,7 +95,7 @@ export function TradePanel({ submitUserOrder, user, currentPrice, bestBid, bestA
       </div>
 
       {orderNote && (
-        <div style={{ fontSize: 11, color: '#fbbf24', background: '#2a2410', border: '1px solid #4a3f1a', borderRadius: 6, padding: '6px 8px', marginBottom: 8 }}>{orderNote}</div>
+        <div style={{ fontSize: 11, color: colors.warn, background: colors.warnBg, border: `1px solid ${colors.warnBorder}`, borderRadius: 6, padding: '6px 8px', marginBottom: 8 }}>{orderNote}</div>
       )}
       {lastFill && (
         <div style={{ fontSize: 11, color: colors.muted, marginBottom: 8, ...tabularNums }}>

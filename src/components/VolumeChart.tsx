@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import type { VolumeBar } from '../sim/bars';
 import { useContainerWidth } from './useContainerWidth';
+import { colors } from '../ui';
 
 interface Props {
   volumeBars: VolumeBar[];
@@ -22,9 +23,9 @@ export const VolumeChart = memo(function VolumeChart({ volumeBars }: Props) {
 
   return (
     <div style={{ width: '100%' }}>
-      <div style={{ display: 'flex', gap: 14, fontSize: 11, color: '#888', marginBottom: 2 }}>
-        <span><span style={{ color: '#4ade80' }}>■</span> buy volume</span>
-        <span><span style={{ color: '#f87171' }}>■</span> sell volume</span>
+      <div style={{ display: 'flex', gap: 14, fontSize: 11, color: colors.muted, marginBottom: 2 }}>
+        <span><span style={{ color: colors.up }}>■</span> buy volume</span>
+        <span><span style={{ color: colors.down }}>■</span> sell volume</span>
       </div>
       <div ref={ref} style={{ width: '100%', height: HEIGHT }}>
         <svg width={width} height={HEIGHT}>
@@ -35,8 +36,8 @@ export const VolumeChart = memo(function VolumeChart({ volumeBars }: Props) {
             const base = HEIGHT - PAD_B;
             return (
               <g key={i}>
-                <rect x={cx - bw} y={base - buyH} width={bw} height={buyH} fill="#4ade80" />
-                <rect x={cx} y={base - sellH} width={bw} height={sellH} fill="#f87171" />
+                <rect x={cx - bw} y={base - buyH} width={bw} height={buyH} fill={colors.up} />
+                <rect x={cx} y={base - sellH} width={bw} height={sellH} fill={colors.down} />
               </g>
             );
           })}

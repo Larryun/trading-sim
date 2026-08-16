@@ -1,4 +1,4 @@
-import { colors, mono, tabularNums } from '../ui';
+import { colors, mono, tabularNums, panelTight } from '../ui';
 
 /** A compact labeled stat chip (label above, mono value below). */
 export function Stat({ label, value, color, title }: { label: string; value: string; color?: string; title?: string }) {
@@ -63,4 +63,27 @@ export function Sparkline({ data, width = 72, height = 22 }: { data: number[]; w
   );
 }
 
-export { colors, mono };
+/** Shared input/select style (dark, tokenized). */
+export const inputStyle: React.CSSProperties = {
+  background: colors.bg0, color: colors.text, border: `1px solid ${colors.border}`, borderRadius: 6, padding: '6px 8px', fontSize: 12,
+};
+
+/** A stat tile (label + big mono value) — shared by the Stats and Options views. */
+export function Tile({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <div style={{ ...panelTight, padding: 12 }}>
+      <div style={{ fontSize: 11, color: colors.muted, marginBottom: 4 }}>{label}</div>
+      <div style={{ ...tabularNums, fontSize: 18, fontWeight: 700, color: color ?? colors.text }}>{value}</div>
+    </div>
+  );
+}
+
+/** Table header / data cells with tokenized colors and tabular numerics. */
+export function Th({ children, align = 'right' }: { children: React.ReactNode; align?: 'left' | 'right' | 'center' }) {
+  return <th style={{ padding: '4px 8px', textAlign: align, fontWeight: 500, color: colors.muted }}>{children}</th>;
+}
+export function Td({ children, align = 'right', color }: { children: React.ReactNode; align?: 'left' | 'right' | 'center'; color?: string }) {
+  return <td style={{ ...tabularNums, padding: '4px 8px', textAlign: align, color: color ?? colors.text }}>{children}</td>;
+}
+
+export { colors, mono, panelTight };
