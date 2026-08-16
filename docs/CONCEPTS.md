@@ -66,7 +66,7 @@ buy and sell orders.
 - The **mid price** sits halfway between best bid and best ask — a common proxy
   for "where the price is" between trades.
 
-**Two kinds of orders:**
+**Three kinds of orders:**
 
 - A **market order** says "fill me now, at whatever price it takes." It **takes
   liquidity** — it consumes resting orders on the opposite side. The person
@@ -74,6 +74,12 @@ buy and sell orders.
 - A **limit order** says "fill me only at this price or better." Any part that
   can't fill immediately **rests in the book**, adding liquidity for others. The
   person posting it is a **maker**.
+- A **stop order** sits **dormant** until the price crosses a trigger, then fires as
+  a market order: a **sell-stop** below the market (a stop-loss) triggers when price
+  *falls* to it; a **buy-stop** above triggers when price *rises* to it. Because a
+  triggered stop is a market order that moves the price, it can trip *other* nearby
+  stops — a **stop cascade** (a self-reinforcing chain of selling or buying). You can
+  place all three from the trade panel.
 
 **Price-time priority:** orders are matched best-price-first, and among orders at
 the same price, first-come-first-served. In the sim the book is kept sorted by
@@ -242,11 +248,19 @@ into existence.
 - **Market maker** — provides liquidity and earns the spread (section 4). *Emergent
   effect:* tighter spreads, smoother fills, and a general damping of volatility.
 
+- **Options dealer** — doesn't bet on direction; it **delta-hedges** an options book,
+  trading only to stay neutral (`Δhedge ≈ −gamma × Δprice`). When **short gamma** (the
+  default) it must **buy as price rises and sell as it falls**, an accelerant — one of
+  the biggest real intraday forces (a **gamma squeeze**), and it chains with the short
+  buy-in cascade below. When **long gamma** it fades moves, **pinning** price toward
+  the option strike. *Emergent effect:* amplified breakouts / crashes, or pinning near
+  a strike, depending on its positioning.
+
 > All of these are implemented and can be added, removed, and tuned live from the
-> Agents panel: **noise, market maker, FOMO herd, whale, panic seller**, and the
-> **Trader** (with the Value / Trend / Contrarian / News / Balanced / Adaptive
-> styles). The **Agent Decisions** view explains what each one would do right now
-> and why.
+> Agents panel: **noise, market maker, FOMO herd, whale, panic seller, options
+> dealer**, and the **Trader** (with the Value / Trend / Contrarian / News /
+> Balanced / Adaptive styles). The **Agent Decisions** view explains what each one
+> would do right now and why.
 
 ---
 
