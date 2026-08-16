@@ -6,7 +6,8 @@ export type AgentType =
   | 'whale'
   | 'fomoHerd'
   | 'panicSeller'
-  | 'trader';
+  | 'trader'
+  | 'dealer';
 
 // Trader styles = a weighting over the [value, momentum, meanReversion, sentiment]
 // signals. Different styles = different kinds of people. 'Adaptive' starts balanced
@@ -135,6 +136,24 @@ export interface WhaleAgent extends AgentAccount {
   stopLoss: number; // 0
 }
 
+/**
+ * Options dealer: models only the delta-HEDGING flow of an options book (no pricing).
+ * Short gamma (netGamma < 0) → must buy as price rises and sell as it falls, amplifying
+ * moves (gamma squeeze / positive feedback); long gamma → fades moves (pinning). Gamma
+ * flips around the strike (short above a call wall, milder/long below).
+ */
+export interface DealerAgent extends AgentAccount {
+  id: string;
+  name: string;
+  type: 'dealer';
+  netGamma: number; // signed dealer gamma; < 0 = short gamma (destabilizing), > 0 = long gamma (pinning)
+  openInterest: number; // scales the hedge size per unit price move
+  strike: number; // the option strike; gamma sign/magnitude flips as price crosses it
+  activity: number;
+  takeProfit: number; // 0
+  stopLoss: number; // 0
+}
+
 /** Panic seller: capitulates on drawdown/fear, buys back the recovery (weak hands). */
 export interface PanicSellerAgent extends AgentAccount {
   id: string;
@@ -157,7 +176,8 @@ export type Agent =
   | FomoHerdAgent
   | WhaleAgent
   | PanicSellerAgent
-  | TraderAgent;
+  | TraderAgent
+  | DealerAgent;
 
 /** A record of one executed user order, for the order-history view. */
 export interface UserOrderRecord {

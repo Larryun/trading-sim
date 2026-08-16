@@ -40,6 +40,7 @@ export const AGENT_TYPE_LABELS: Record<AgentType, string> = {
   whale: 'Institution / whale',
   panicSeller: 'Panic seller',
   trader: 'Trader',
+  dealer: 'Options dealer',
 };
 
 export const AGENT_TYPE_COLORS: Record<AgentType, string> = {
@@ -49,6 +50,7 @@ export const AGENT_TYPE_COLORS: Record<AgentType, string> = {
   whale: '#94a3b8',
   panicSeller: '#ef4444',
   trader: '#22d3ee',
+  dealer: '#eab308',
 };
 
 /**
@@ -174,6 +176,10 @@ export function createAgent(
       };
     case 'panicSeller':
       return { id, name, type, peakWindow: 15, panicThreshold: 0.06, capitulationDD: 0.15, baseDumpFrac: 0.4, sentPanic: 0.6, reentryFrac: 0.3, activity: 0.7, takeProfit: 0, stopLoss: 0, ...account };
+    case 'dealer':
+      // Short gamma by default (the destabilizing case): hedges by buying rallies /
+      // selling dips. Strike defaults to the current price (a "call wall" nearby).
+      return { id, name, type, netGamma: -0.6, openInterest: 1500, strike: startingPrice, activity: 0.95, takeProfit: 0, stopLoss: 0, ...account };
   }
 }
 
@@ -333,6 +339,20 @@ export function decideOrder(agent: Agent, market: MarketState): OrderIntent[] {
       }
       return [];
     }
+    case 'dealer': {
+      // Delta-hedge an options book: to stay neutral the dealer must trade
+      // Δhedge ≈ -gamma · Δprice. Short gamma (gamma<0) → buy as price rises, sell as
+      // it falls (amplifies the move = gamma squeeze); long gamma → fade the move (pin).
+      // Gamma is more negative above the strike (a call wall), milder/long below.
+      const n = market.priceHistory.length;
+      if (n < 2) return [];
+      const dS = price - market.priceHistory[n - 2];
+      if (Math.abs(dS) < 1e-6) return [];
+      const effGamma = price >= agent.strike ? agent.netGamma : -agent.netGamma * 0.5;
+      const hedge = -effGamma * dS * agent.openInterest; // shares to trade to re-hedge
+      if (Math.abs(hedge) < MIN_ORDER) return [];
+      return [{ side: hedge > 0 ? 'buy' : 'sell', size: Math.abs(hedge) }];
+    }
   }
 }
 
@@ -460,6 +480,26 @@ export function explainDecision(agent: Agent, market: MarketState): DecisionExpl
         ],
         verdict: 'quote',
         detail: `Posts ${agent.levels} levels × ${agent.quoteSize} sh each side around $${price.toFixed(2)}, skewing to unwind inventory.`,
+      };
+    }
+    case 'dealer': {
+      const n = market.priceHistory.length;
+      const dS = n >= 2 ? price - market.priceHistory[n - 2] : 0;
+      const effGamma = price >= agent.strike ? agent.netGamma : -agent.netGamma * 0.5;
+      const shortGamma = effGamma < 0;
+      const hedge = -effGamma * dS * agent.openInterest;
+      const v: Verdict = Math.abs(hedge) < 0.01 ? 'hold' : hedge > 0 ? 'buy' : 'sell';
+      return {
+        rule: 'Options dealer hedging its book — trades to stay delta-neutral. Short gamma → buys rallies & sells dips (amplifies moves = gamma squeeze); long gamma → fades them (pins price to the strike).',
+        signals: [
+          { label: 'Gamma', value: `${effGamma >= 0 ? '+' : ''}${effGamma.toFixed(2)} (${shortGamma ? 'short' : 'long'})`, lean: 0 },
+          { label: 'vs strike', value: `$${agent.strike.toFixed(0)} (${price >= agent.strike ? 'above' : 'below'})`, lean: 0 },
+          { label: 'Last move', value: `${dS >= 0 ? '+' : ''}${dS.toFixed(2)}`, lean: dS > 0 ? 1 : dS < 0 ? -1 : 0 },
+        ],
+        verdict: v,
+        detail: v === 'hold' ? 'Price flat — nothing to re-hedge.'
+          : shortGamma ? `Short gamma: price ${dS > 0 ? 'rose' : 'fell'} → ${v}s in the SAME direction, accelerating the move.`
+          : `Long gamma: price ${dS > 0 ? 'rose' : 'fell'} → ${v}s AGAINST the move, pinning toward the strike.`,
       };
     }
   }

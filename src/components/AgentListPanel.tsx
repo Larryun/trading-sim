@@ -10,7 +10,7 @@ interface Props {
   updateAgentParams: (id: string, patch: Record<string, unknown>) => void;
 }
 
-const AGENT_TYPES: AgentType[] = ['noise', 'marketMaker', 'fomoHerd', 'whale', 'panicSeller', 'trader'];
+const AGENT_TYPES: AgentType[] = ['noise', 'marketMaker', 'fomoHerd', 'whale', 'panicSeller', 'trader', 'dealer'];
 const TRADER_STYLE_KEYS = Object.keys(TRADER_STYLES) as TraderStyle[];
 
 // Which types use the shared take-profit / stop-loss exit overlay. (Traders manage
@@ -40,6 +40,9 @@ const PARAM_HELP: Record<string, string> = {
   'Participation jitter': 'Random variation on slice size to mask its footprint.',
   'Impact budget': 'Adverse recent move that makes it pause to limit its own impact.',
   'Value band': 'How far price must sit from fair value before it accumulates (below) or distributes (above).',
+  'Net gamma': 'Dealer options gamma. Negative = short gamma (buys rallies/sells dips → amplifies moves, gamma squeeze); positive = long gamma (fades moves, pins to strike).',
+  'Open interest': 'Scales how many shares the dealer must hedge per unit price move.',
+  Strike: 'The option strike. Gamma is more negative above it (a call wall) and milder/long below.',
   'Peak window': 'Ticks used to track the recent high for drawdown.',
   'Panic threshold': 'Drawdown from the peak that triggers selling.',
   Capitulation: 'Drawdown at which it dumps nearly everything.',
@@ -285,6 +288,18 @@ function AgentCard({
                 onChange={(v) => onUpdate({ sentPanic: v })} format={(v) => v.toFixed(1)} />
               <Slider label="Re-entry (% cash)" value={agent.reentryFrac} min={0} max={1} step={0.05}
                 onChange={(v) => onUpdate({ reentryFrac: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
+              <Slider label="Activity" value={agent.activity} min={0} max={1} step={0.05}
+                onChange={(v) => onUpdate({ activity: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
+            </>
+          )}
+          {agent.type === 'dealer' && (
+            <>
+              <Slider label="Net gamma" value={agent.netGamma} min={-1.5} max={1.5} step={0.1}
+                onChange={(v) => onUpdate({ netGamma: v })} format={(v) => `${v.toFixed(1)} (${v < 0 ? 'short' : 'long'})`} />
+              <Slider label="Open interest" value={agent.openInterest} min={0} max={20000} step={250}
+                onChange={(v) => onUpdate({ openInterest: v })} format={(v) => v.toFixed(0)} />
+              <Slider label="Strike" value={agent.strike} min={1} max={300} step={1}
+                onChange={(v) => onUpdate({ strike: v })} format={(v) => `$${v.toFixed(0)}`} />
               <Slider label="Activity" value={agent.activity} min={0} max={1} step={0.05}
                 onChange={(v) => onUpdate({ activity: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
             </>
