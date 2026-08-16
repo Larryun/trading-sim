@@ -26,6 +26,8 @@ export interface Greeks {
   price: number;
   delta: number; // ∂price/∂spot (calls 0..1, puts -1..0)
   gamma: number; // ∂delta/∂spot (always ≥ 0 for a long option)
+  vega: number; // ∂price/∂vol, per 1.00 (100 vol points) of implied vol
+  theta: number; // ∂price/∂time, per YEAR (negative for a long option = time decay)
 }
 
 /**
@@ -34,20 +36,34 @@ export interface Greeks {
  */
 export function blackScholes(type: OptionType, spot: number, strike: number, tau: number, vol: number, r = 0): Greeks {
   if (tau <= 1e-9 || vol <= 1e-9 || spot <= 0) {
-    // At/after expiry (or no vol): value is pure intrinsic, delta is a step, gamma 0.
+    // At/after expiry (or no vol): value is pure intrinsic, delta is a step, rest vanish.
     const intrinsic = type === 'call' ? Math.max(0, spot - strike) : Math.max(0, strike - spot);
     const itm = type === 'call' ? spot > strike : spot < strike;
-    return { price: intrinsic, delta: itm ? (type === 'call' ? 1 : -1) : 0, gamma: 0 };
+    return { price: intrinsic, delta: itm ? (type === 'call' ? 1 : -1) : 0, gamma: 0, vega: 0, theta: 0 };
   }
   const sqrtT = Math.sqrt(tau);
   const d1 = (Math.log(spot / strike) + (r + 0.5 * vol * vol) * tau) / (vol * sqrtT);
   const d2 = d1 - vol * sqrtT;
   const disc = Math.exp(-r * tau);
-  const gamma = normPdf(d1) / (spot * vol * sqrtT);
+  const pdf1 = normPdf(d1);
+  const gamma = pdf1 / (spot * vol * sqrtT);
+  const vega = spot * pdf1 * sqrtT; // same for calls and puts
+  // Theta: time decay (per year). The first term is the shared vol-decay piece.
+  const decay = -(spot * pdf1 * vol) / (2 * sqrtT);
   if (type === 'call') {
-    return { price: spot * normCdf(d1) - strike * disc * normCdf(d2), delta: normCdf(d1), gamma };
+    return {
+      price: spot * normCdf(d1) - strike * disc * normCdf(d2),
+      delta: normCdf(d1),
+      gamma, vega,
+      theta: decay - r * strike * disc * normCdf(d2),
+    };
   }
-  return { price: strike * disc * normCdf(-d2) - spot * normCdf(-d1), delta: normCdf(d1) - 1, gamma };
+  return {
+    price: strike * disc * normCdf(-d2) - spot * normCdf(-d1),
+    delta: normCdf(d1) - 1,
+    gamma, vega,
+    theta: decay + r * strike * disc * normCdf(-d2),
+  };
 }
 
 /** Intrinsic value at expiry (cash settlement). */

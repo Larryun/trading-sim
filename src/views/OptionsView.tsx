@@ -28,6 +28,7 @@ export function OptionsView() {
     putGamma: r.put?.gamma ?? 0,
   }));
   const totalOi = oiRows.reduce((s, r) => s + r.callOi + r.putOi, 0);
+  const g = sim.optionGreeks;
 
   return (
     <div style={pageWrap}>
@@ -67,6 +68,27 @@ export function OptionsView() {
             </label>
           </div>
 
+          {/* Aggregate greeks — the option market's exposure to the stock */}
+          <div style={{ ...panel, marginBottom: 12 }}>
+            <SectionHeaderRow right={<span style={{ fontSize: 10, color: colors.muted }}>public net position · the dealer is short these</span>}>
+              Market greeks
+            </SectionHeaderRow>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12 }}>
+              <Tile label="Delta (sh equiv)" value={`${g.delta >= 0 ? '+' : ''}${Math.round(g.delta).toLocaleString()}`}
+                color={g.delta >= 0 ? colors.up : colors.down}
+                title="Share-equivalent exposure of all open options. The dealer holds the opposite and hedges it in the stock." />
+              <Tile label="Gamma (sh / $1)" value={`${g.gamma >= 0 ? '+' : ''}${g.gamma.toFixed(1)}`}
+                color={g.gamma >= 0 ? colors.up : colors.down}
+                title="How much that delta changes per $1 move — the squeeze driver. Public long gamma = dealer SHORT gamma, so it must buy rallies and sell dips." />
+              <Tile label="Vega ($ / 1 vol pt)" value={fmtMoney(g.vega)} color={g.vega >= 0 ? colors.up : colors.down}
+                title="P&L per 1 point of implied volatility." />
+              <Tile label="Theta ($ / tick)" value={fmtMoney(g.theta)} color={g.theta >= 0 ? colors.up : colors.down}
+                title="Time decay per tick. Long options bleed theta; the dealer collects it." />
+              <Tile label="Dealer net delta" value={`${g.dealerDelta >= 0 ? '+' : ''}${Math.round(g.dealerDelta).toLocaleString()}`}
+                title="Dealer's option delta plus its stock hedge. Near zero = well hedged; the gap is what it still needs to trade." />
+            </div>
+          </div>
+
           {/* Open interest by strike — where dealer hedging pressure concentrates */}
           <div style={{ ...panel, marginBottom: 12 }}>
             <SectionHeaderRow right={<span style={{ ...tabularNums, fontSize: 10, color: colors.muted }}>total OI {totalOi.toLocaleString()} contracts</span>}>
@@ -79,14 +101,14 @@ export function OptionsView() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, ...tabularNums, textAlign: 'center' }}>
               <thead>
                 <tr style={{ color: colors.muted }}>
-                  <th colSpan={4} style={{ padding: 6, color: colors.up, borderBottom: `1px solid ${colors.border}` }}>CALLS</th>
+                  <th colSpan={5} style={{ padding: 6, color: colors.up, borderBottom: `1px solid ${colors.border}` }}>CALLS</th>
                   <th style={{ padding: 6, borderBottom: `1px solid ${colors.border}` }}>Strike</th>
-                  <th colSpan={4} style={{ padding: 6, color: colors.down, borderBottom: `1px solid ${colors.border}` }}>PUTS</th>
+                  <th colSpan={5} style={{ padding: 6, color: colors.down, borderBottom: `1px solid ${colors.border}` }}>PUTS</th>
                 </tr>
                 <tr style={{ color: colors.muted, fontSize: 11 }}>
-                  <Th align="center">δ</Th><Th align="center">Pos</Th><Th align="center">Price</Th><Th align="center">Trade</Th>
+                  <Th align="center">γ</Th><Th align="center">δ</Th><Th align="center">Pos</Th><Th align="center">Price</Th><Th align="center">Trade</Th>
                   <Th align="center">$</Th>
-                  <Th align="center">Trade</Th><Th align="center">Price</Th><Th align="center">Pos</Th><Th align="center">δ</Th>
+                  <Th align="center">Trade</Th><Th align="center">Price</Th><Th align="center">Pos</Th><Th align="center">δ</Th><Th align="center">γ</Th>
                 </tr>
               </thead>
               <tbody>
@@ -94,6 +116,7 @@ export function OptionsView() {
                   const atm = Math.abs(r.strike - spot) < Math.abs(rows[0].strike - spot) + 0.01 && Math.min(...rows.map((x) => Math.abs(x.strike - spot))) === Math.abs(r.strike - spot);
                   return (
                     <tr key={r.strike} style={{ borderTop: `1px solid ${colors.border}`, background: atm ? colors.bg2 : undefined }}>
+                      <Td align="center" color={colors.muted}>{r.call ? r.call.gamma.toFixed(3) : '—'}</Td>
                       <Td align="center">{r.call ? r.call.delta.toFixed(2) : '—'}</Td>
                       <Td align="center" color={r.call && r.call.userQty ? colors.accent : colors.muted}>{r.call?.userQty || 0}</Td>
                       <Td align="center">{r.call ? `$${r.call.price.toFixed(2)}` : '—'}</Td>
@@ -103,6 +126,7 @@ export function OptionsView() {
                       <Td align="center">{r.put ? `$${r.put.price.toFixed(2)}` : '—'}</Td>
                       <Td align="center" color={r.put && r.put.userQty ? colors.accent : colors.muted}>{r.put?.userQty || 0}</Td>
                       <Td align="center">{r.put ? r.put.delta.toFixed(2) : '—'}</Td>
+                      <Td align="center" color={colors.muted}>{r.put ? r.put.gamma.toFixed(3) : '—'}</Td>
                     </tr>
                   );
                 })}

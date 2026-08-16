@@ -68,8 +68,8 @@ export function TradingView() {
           <span style={{ ...tabularNums, width: 52, color: colors.text }}>{sim.tickMs === 0 ? 'max' : `${sim.tickMs}ms`}</span>
         </label>
 
-        <label style={{ fontSize: 12, color: colors.muted, display: 'flex', alignItems: 'center', gap: 8 }}>
-          Bars
+        <label style={{ fontSize: 12, color: colors.muted, display: 'flex', alignItems: 'center', gap: 8 }} title="Ticks per candle — also how often the depth/order-book views resample, so the whole chart set shares one cadence">
+          Interval
           <input type="range" min={1} max={60} step={1} value={sim.barInterval} onChange={(e) => sim.setBarInterval(Number(e.target.value))} />
           <span style={{ ...tabularNums, width: 44, color: colors.text }}>{sim.barInterval}t</span>
         </label>
@@ -107,7 +107,7 @@ export function TradingView() {
 
       {/* Charts: price on top, buy/sell order flow below */}
       <div style={{ ...panel, marginBottom: 8 }}>
-        <SectionHeaderRow right={<span style={{ fontSize: 10, color: colors.muted }}>{sim.barInterval}t bars</span>}>Price &amp; Volume</SectionHeaderRow>
+        <SectionHeaderRow right={<span style={{ fontSize: 10, color: colors.muted }}>{sim.barInterval}t interval</span>}>Price &amp; Volume</SectionHeaderRow>
         {sim.chartType === 'candle' ? <CandleChart bars={sim.bars} /> : <PriceChart bars={sim.bars} />}
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${colors.border}` }}>
           <VolumeChart volumeBars={sim.volumeBars} />

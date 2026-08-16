@@ -95,6 +95,7 @@ export function useSimulation() {
   const [userOptionValue, setUserOptionValue] = useState(0);
   const [ticksToExpiry, setTicksToExpiry] = useState(0);
   const [dealerState, setDealerState] = useState(() => engineRef.current.optionsDealerState);
+  const [optionGreeks, setOptionGreeks] = useState(() => engineRef.current.optionGreeks);
   const [fundamentalValue, setFundamentalValue] = useState(engineRef.current.fundamentalValue);
   const [eps, setEps] = useState(engineRef.current.eps);
   const valuationMultiple = engineRef.current.valuationMultiple;
@@ -133,7 +134,7 @@ export function useSimulation() {
   // refresh function without changing identity and re-rendering memoized children.
   const runningRef = useRef(running);
   runningRef.current = running;
-  const refreshRef = useRef<() => void>(() => {});
+  const refreshRef = useRef<(force?: boolean) => void>(() => {});
 
   // Rebuild only the bounded display window (≈120 bars) from the ring buffers,
   // so per-tick work stays flat no matter how long the sim has been running.
@@ -159,7 +160,7 @@ export function useSimulation() {
     setSentimentSeries(sentBars.map((b) => ({ index: b.index, value: Number(b.close.toFixed(3)) })));
   };
 
-  const refreshFromEngine = () => {
+  const refreshFromEngine = (force = false) => {
     const engine = engineRef.current;
     setAgents(engine.agents.map((a) => ({ ...a })));
     setCurrentPrice(engine.currentPrice);
@@ -176,14 +177,21 @@ export function useSimulation() {
       setUserOptionValue(engine.userOptionValue);
       setTicksToExpiry(Math.max(0, engine.optionExpiryTick - engine.tick));
       setDealerState(engine.optionsDealerState);
+      setOptionGreeks(engine.optionGreeks);
     }
     setFundamentalValue(engine.fundamentalValue);
     setEps(engine.eps);
     setLastUserFill(engine.lastUserFill);
     setUserOrders(engine.userOrders.slice(-50).reverse());
     setUserRestingOrders(engine.book.countOrdersByOwner('user'));
-    setBookDepth(engine.book.getDepth(BOOK_DEPTH));
-    setMyLimitOrders(engine.book.getUserOrders());
+    // The depth/book views are snapshots of a fast-moving book; refreshing them every
+    // tick is unreadable (and wasteful). Sample them on the same interval as the candles,
+    // so "Interval" governs the whole chart cadence. `force` covers paused/manual refresh.
+    const interval = Math.max(1, barIntervalRef.current);
+    if (force || engine.tick % interval === 0) {
+      setBookDepth(engine.book.getDepth(BOOK_DEPTH));
+      setMyLimitOrders(engine.book.getUserOrders());
+    }
     setTick(engine.tick);
     setTotalDividendsPaid(engine.totalDividendsPaid);
     setTotalFeesPaid(engine.totalFeesPaid);
@@ -196,7 +204,7 @@ export function useSimulation() {
 
   useEffect(() => {
     if (!running) {
-      refreshFromEngine(); // paused: show the final engine state once
+      refreshFromEngine(true); // paused: show the final engine state once
       return;
     }
     // Step the engine and flush to React every tick (no render throttle).
@@ -227,7 +235,7 @@ export function useSimulation() {
     // process the queue), so the order fills right away instead of doing nothing.
     if (!runningRef.current) {
       engineRef.current.flushUserOrders();
-      refreshRef.current();
+      refreshRef.current(true);
     }
   }, []);
 
@@ -295,12 +303,12 @@ export function useSimulation() {
   const enableOptions = useCallback((on: boolean) => {
     engineRef.current.enableOptions(on);
     setOptionsEnabledState(on);
-    refreshRef.current();
+    refreshRef.current(true);
   }, []);
 
   const tradeOption = useCallback((contractId: number, qty: number) => {
     engineRef.current.tradeOption(contractId, qty);
-    refreshRef.current();
+    refreshRef.current(true);
   }, []);
 
   const unrealizedPnl = user.shares * (currentPrice - user.avgCost);
@@ -327,6 +335,7 @@ export function useSimulation() {
     tradeOption,
     optionPnl,
     userOptionValue,
+    optionGreeks,
     ticksToExpiry,
     dealerState,
     contractMultiplier,

@@ -456,6 +456,38 @@ export class SimulationEngine {
     return CONTRACT_MULTIPLIER;
   }
 
+  /**
+   * The option market's aggregate greeks, from the PUBLIC's side (all holders netted).
+   * The dealer is short exactly these, which is why negative public gamma... — i.e. the
+   * public being long gamma means the DEALER is short gamma and must chase price.
+   *   delta — share-equivalents of exposure
+   *   gamma — how many shares that delta changes per $1 move (the squeeze driver)
+   *   vega  — $ P&L per 1 volatility POINT (1%)
+   *   theta — $ P&L per TICK of time decay
+   */
+  get optionGreeks(): { delta: number; gamma: number; vega: number; theta: number; dealerDelta: number } {
+    const spot = this.currentPrice;
+    const tau = this.optionTau();
+    let delta = 0, gamma = 0, vega = 0, theta = 0;
+    if (this.optionsEnabled) {
+      const g = new Map<number, ReturnType<typeof blackScholes>>();
+      for (const c of this.optionChain) g.set(c.id, blackScholes(c.type, spot, c.strike, tau, this.optionImpliedVol, this.optionRate));
+      for (const [, pos] of this.optionPositions) {
+        for (const [cid, qty] of pos) {
+          const k = g.get(cid);
+          if (!k || qty === 0) continue;
+          const n = qty * CONTRACT_MULTIPLIER;
+          delta += n * k.delta;
+          gamma += n * k.gamma;
+          vega += (n * k.vega) / 100; // per 1 vol point
+          theta += (n * k.theta) / TICKS_PER_YEAR; // per tick
+        }
+      }
+    }
+    // The dealer holds the opposite exposure, offset by the stock it has hedged with.
+    return { delta, gamma, vega, theta, dealerDelta: this.optionsDealer.shares - delta };
+  }
+
   /** Issue a fresh chain of calls+puts at strikes around spot, with a new expiry. */
   private rollOptionChain(): void {
     const spot = this.book.getLastTradePrice();
