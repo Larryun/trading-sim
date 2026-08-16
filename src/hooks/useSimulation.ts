@@ -80,6 +80,7 @@ export function useSimulation() {
   const [feeBps, setFeeState] = useState(engineRef.current.feeBps);
   const [sentimentDecay, setSentimentDecayState] = useState(engineRef.current.sentimentDecay);
   const [running, setRunning] = useState(true);
+  const [lastOrderNote, setLastOrderNote] = useState<string | null>(null);
   const [tickMs, setTickMs] = useState(200);
   const [stepMs, setStepMs] = useState(0); // measured compute time per tick (smoothed)
   const stepEmaRef = useRef(0);
@@ -92,6 +93,12 @@ export function useSimulation() {
   // without re-subscribing the timer, so keep it in a ref.
   const barIntervalRef = useRef(barInterval);
   barIntervalRef.current = barInterval;
+
+  // Stable refs so the (deps: []) order handler can see the latest running flag /
+  // refresh function without changing identity and re-rendering memoized children.
+  const runningRef = useRef(running);
+  runningRef.current = running;
+  const refreshRef = useRef<() => void>(() => {});
 
   // Rebuild only the bounded display window (≈120 bars) from the ring buffers,
   // so per-tick work stays flat no matter how long the sim has been running.
@@ -137,8 +144,10 @@ export function useSimulation() {
     setTotalDividendsPaid(engine.totalDividendsPaid);
     setTotalFeesPaid(engine.totalFeesPaid);
     setRecentPrices(engine.priceRing.window(80).data);
+    setLastOrderNote(engine.lastOrderNote);
     rebuildDisplay();
   };
+  refreshRef.current = refreshFromEngine;
 
   useEffect(() => {
     if (!running) {
@@ -169,6 +178,12 @@ export function useSimulation() {
   const submitUserOrder = useCallback((side: Side, size: number, limitPrice?: number) => {
     if (size <= 0) return;
     engineRef.current.queueUserOrder(side, size, limitPrice);
+    // While paused, execute immediately against the current book (no next tick to
+    // process the queue), so the order fills right away instead of doing nothing.
+    if (!runningRef.current) {
+      engineRef.current.flushUserOrders();
+      refreshRef.current();
+    }
   }, []);
 
   const cancelUserOrders = useCallback(() => {
@@ -248,6 +263,7 @@ export function useSimulation() {
     setSentimentDecay,
     floatBreakdown,
     lastUserFill,
+    lastOrderNote,
     userOrders,
     userRestingOrders,
     bookDepth,

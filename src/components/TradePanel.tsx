@@ -12,6 +12,7 @@ interface Props {
   restingOrders: number;
   unrealizedPnl: number;
   lastFill: UserFill;
+  orderNote: string | null;
 }
 
 const btn = (bg: string): React.CSSProperties => ({
@@ -26,7 +27,7 @@ const btn = (bg: string): React.CSSProperties => ({
   background: bg,
 });
 
-export function TradePanel({ submitUserOrder, cancelUserOrders, user, currentPrice, bestBid, bestAsk, restingOrders, unrealizedPnl, lastFill }: Props) {
+export function TradePanel({ submitUserOrder, cancelUserOrders, user, currentPrice, bestBid, bestAsk, restingOrders, unrealizedPnl, lastFill, orderNote }: Props) {
   const [size, setSize] = useState(100);
   const [useLimit, setUseLimit] = useState(false);
   const [limitPrice, setLimitPrice] = useState(currentPrice);
@@ -113,6 +114,13 @@ export function TradePanel({ submitUserOrder, cancelUserOrders, user, currentPri
         <button style={btn('#16a34a')} onClick={() => submit('buy')}>{useLimit ? 'Buy limit' : 'Buy'}</button>
         <button style={btn('#dc2626')} onClick={() => submit('sell')}>{useLimit ? 'Sell limit' : 'Sell'}</button>
       </div>
+
+      {/* Outcome of the last order: capped by cash, no liquidity, resting, etc. */}
+      {orderNote && (
+        <div style={{ fontSize: 11, color: '#fbbf24', background: '#2a2410', border: '1px solid #4a3f1a', borderRadius: 6, padding: '6px 8px', marginBottom: 8 }}>
+          {orderNote}
+        </div>
+      )}
 
       <button
         onClick={cancelUserOrders}

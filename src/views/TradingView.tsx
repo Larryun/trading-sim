@@ -133,6 +133,7 @@ export function TradingView() {
               restingOrders={sim.userRestingOrders}
               unrealizedPnl={sim.unrealizedPnl}
               lastFill={sim.lastUserFill}
+              orderNote={sim.lastOrderNote}
             />
           </div>
           {/* Order book + your resting orders, split below Your Trades */}

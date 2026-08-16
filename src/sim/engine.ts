@@ -64,6 +64,7 @@ export class SimulationEngine {
   tick = 0;
 
   lastUserFill: { side: Side; size: number; avgPrice: number; priceBefore: number } | null = null;
+  lastOrderNote: string | null = null; // human-readable outcome of the user's last order (capped / no liquidity / resting)
   userOrders: UserOrderRecord[] = [];
   private nextUserOrderId = 1;
   agents: Agent[] = [];
@@ -186,6 +187,100 @@ export class SimulationEngine {
 
   cancelUserOrders(): void {
     this.book.cancelOrdersByOwner('user');
+  }
+
+  /**
+   * Execute any queued user orders immediately against the current book WITHOUT
+   * advancing the simulation (no new tick, no agent activity). Used so a buy/sell
+   * placed while the sim is paused still fills, instead of sitting in the queue.
+   */
+  flushUserOrders(): void {
+    if (this.pendingUserOrders.length === 0) return;
+    const registry = this.buildRegistry();
+    const stepStartPrice = this.book.getLastTradePrice();
+    const realizedAtStart = this.user.realizedPnl;
+    const trades: Trade[] = [];
+    for (const uo of this.pendingUserOrders) trades.push(...this.runUserOrder(uo, registry));
+    this.pendingUserOrders = [];
+    this.recordUserFills(trades, stepStartPrice, realizedAtStart);
+    this.trades.push(...trades);
+    if (this.trades.length > MAX_TRADES) this.trades = this.trades.slice(-MAX_TRADES);
+  }
+
+  /**
+   * Cap a user order to a realistic size, submit it, settle the fills, and record a
+   * human-readable outcome note. The user trades a CASH ACCOUNT: buys can't spend
+   * past available cash (incl. the taker fee) and sells can't exceed shares held
+   * (no user shorting). Returns the resulting trades.
+   */
+  private runUserOrder(uo: PendingUserOrder, registry: Map<string, AgentAccount>): Trade[] {
+    const px = this.book.getLastTradePrice();
+    const requested = uo.size;
+    let size = requested;
+    if (uo.side === 'sell') {
+      size = Math.min(size, this.user.shares); // no shorting for the user
+      if (size < MIN_ORDER) {
+        this.lastOrderNote = this.user.shares < MIN_ORDER ? 'You hold no shares to sell.' : null;
+        return [];
+      }
+    } else {
+      // Cap to what cash can afford at the marginal price, including the taker fee.
+      const ref = uo.limitPrice ?? this.book.getBestAsk() ?? px; // best ask ≈ what a market buy pays
+      const perShare = ref * (1 + this.feeBps / 10000);
+      const affordable = perShare > 0 ? this.user.cash / perShare : 0;
+      size = Math.min(size, Math.max(0, affordable));
+      if (size < MIN_ORDER) {
+        this.lastOrderNote = 'Not enough cash to buy at the current price.';
+        return [];
+      }
+    }
+
+    const capped = size < requested - 1e-9; // order was trimmed by cash (buy) / holdings (sell)
+    const trades = uo.limitPrice != null
+      ? this.book.submitLimitOrder(uo.side, size, uo.limitPrice, 'user', this.tick)
+      : this.book.submitMarketOrder(uo.side, size, 'user', this.tick);
+    for (const t of trades) this.settle(t, registry);
+
+    const filled = trades.reduce((s, t) => s + t.size, 0);
+    const capReason = uo.side === 'buy' ? 'your cash' : 'the shares you hold';
+    if (uo.limitPrice != null) {
+      // Limit orders rest; the shortfall vs `size` is just the unfilled resting part.
+      this.lastOrderNote = filled <= 1e-9
+        ? `Limit order resting in the book${capped ? ` (trimmed to ${size.toFixed(0)} sh by ${capReason})` : ''}.`
+        : filled < size - 1e-9
+          ? `Filled ${filled.toFixed(0)} sh; the rest is resting in the book.`
+          : capped ? `Filled ${filled.toFixed(0)} sh (limited by ${capReason}).` : null;
+    } else if (filled <= 1e-9) {
+      this.lastOrderNote = `No ${uo.side === 'buy' ? 'ask' : 'bid'}-side liquidity — nothing to trade against.`;
+    } else if (filled < size - 1e-9) {
+      this.lastOrderNote = `Filled ${filled.toFixed(0)} of ${size.toFixed(0)} sh — ran out of liquidity.`;
+    } else if (capped) {
+      this.lastOrderNote = `Filled ${filled.toFixed(0)} sh (limited by ${capReason}).`;
+    } else {
+      this.lastOrderNote = null;
+    }
+    return trades;
+  }
+
+  /** Record the user's fills from a batch of trades into the order history + last-fill readout. */
+  private recordUserFills(trades: Trade[], stepStartPrice: number, realizedAtStart: number): void {
+    let buyShares = 0, buyNotional = 0, sellShares = 0, sellNotional = 0;
+    for (const t of trades) {
+      if (t.buyerId === 'user') { buyShares += t.size; buyNotional += t.price * t.size; }
+      if (t.sellerId === 'user') { sellShares += t.size; sellNotional += t.price * t.size; }
+    }
+    if (buyShares > 0) {
+      const avgPrice = buyNotional / buyShares;
+      this.userOrders.push({ id: this.nextUserOrderId++, tick: this.tick, side: 'buy', shares: buyShares, avgPrice, gain: 0 });
+      this.lastUserFill = { side: 'buy', size: buyShares, avgPrice, priceBefore: stepStartPrice };
+    }
+    if (sellShares > 0) {
+      const avgPrice = sellNotional / sellShares;
+      const gain = this.user.realizedPnl - realizedAtStart; // realized delta comes only from sells
+      this.userOrders.push({ id: this.nextUserOrderId++, tick: this.tick, side: 'sell', shares: sellShares, avgPrice, gain });
+      this.lastUserFill = { side: 'sell', size: sellShares, avgPrice, priceBefore: stepStartPrice };
+    }
+    if (this.userOrders.length > 200) this.userOrders = this.userOrders.slice(-200);
   }
 
   /** Map every ownerId to its account so both sides of a trade can be settled. */
@@ -337,45 +432,20 @@ export class SimulationEngine {
       }
     }
 
-    // User orders (market or limit). Sells capped to shares held.
+    // User orders (market or limit), processed against the current book.
     for (const uo of this.pendingUserOrders) {
-      let size = uo.size;
-      if (uo.side === 'sell') size = Math.min(size, this.user.shares);
-      if (size < MIN_ORDER) continue;
-      const trades = uo.limitPrice != null
-        ? this.book.submitLimitOrder(uo.side, size, uo.limitPrice, 'user', this.tick)
-        : this.book.submitMarketOrder(uo.side, size, 'user', this.tick);
-      for (const t of trades) {
-        this.settle(t, registry);
-        tickTrades.push(t);
-      }
+      for (const t of this.runUserOrder(uo, registry)) tickTrades.push(t);
     }
     this.pendingUserOrders = [];
 
-    // Aggregate this tick's volume and the user's fills (incl. resting-order
-    // fills triggered by other participants earlier in the tick).
+    // Aggregate this tick's volume (for the volume bars) and record the user's fills.
     let buyVol = 0;
     let sellVol = 0;
-    let userBuyShares = 0, userBuyNotional = 0, userSellShares = 0, userSellNotional = 0;
     for (const t of tickTrades) {
       if (t.side === 'buy') buyVol += t.size;
       else sellVol += t.size;
-      if (t.buyerId === 'user') { userBuyShares += t.size; userBuyNotional += t.price * t.size; }
-      if (t.sellerId === 'user') { userSellShares += t.size; userSellNotional += t.price * t.size; }
     }
-
-    if (userBuyShares > 0) {
-      const avgPrice = userBuyNotional / userBuyShares;
-      this.userOrders.push({ id: this.nextUserOrderId++, tick: this.tick, side: 'buy', shares: userBuyShares, avgPrice, gain: 0 });
-      this.lastUserFill = { side: 'buy', size: userBuyShares, avgPrice, priceBefore: stepStartPrice };
-    }
-    if (userSellShares > 0) {
-      const avgPrice = userSellNotional / userSellShares;
-      const gain = this.user.realizedPnl - userRealizedAtStart; // realized delta comes only from sells
-      this.userOrders.push({ id: this.nextUserOrderId++, tick: this.tick, side: 'sell', shares: userSellShares, avgPrice, gain });
-      this.lastUserFill = { side: 'sell', size: userSellShares, avgPrice, priceBefore: stepStartPrice };
-    }
-    if (this.userOrders.length > 200) this.userOrders = this.userOrders.slice(-200);
+    this.recordUserFills(tickTrades, stepStartPrice, userRealizedAtStart);
 
     this.trades.push(...tickTrades);
     if (this.trades.length > MAX_TRADES) this.trades = this.trades.slice(-MAX_TRADES);
