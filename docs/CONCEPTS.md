@@ -477,11 +477,13 @@ simplifications in mind:
   the seeded market relies on its maker agents to stay alive.
 - **Simplified matching.** Discrete ticks, a single price-time-priority book, and
   simplified order types. Any unfilled market-order remainder is simply dropped.
-- **No frictions.** No commissions, no fees, no taxes, no bid-ask cost beyond the
-  modeled spread, no latency, no partial-day mechanics, no circuit breakers.
-- **No real fundamentals.** "Sentiment" is an abstract number and "fair value"
-  (for value agents) is a modeling assumption — there are no earnings, cash
-  flows, or balance sheets underneath.
+- **Few frictions.** There *is* a taker fee (to the broker) and quarterly
+  dividends, but no commissions, taxes, borrow fees, latency, circuit breakers,
+  or auctions.
+- **Stylized fundamentals.** Fair value is derived from a simple **earnings** model
+  (EPS × a fixed multiple), moved by earnings reports and news — but there are no
+  real cash flows, balance sheets, interest rates, or analyst consensus underneath,
+  and it's a single shared estimate rather than many subjective ones.
 - **Simplified shorting/leverage.** Shorting is collateralized crudely (by cash,
   with a simple maintenance-margin buy-in) rather than a real securities-lending
   market with borrow fees and locate constraints.
