@@ -2,8 +2,10 @@ import { useState } from 'react';
 import type { AgentAccount, Side } from '../sim/types';
 import type { UserFill } from '../hooks/useSimulation';
 
+type OrderType = 'market' | 'limit' | 'stop';
+
 interface Props {
-  submitUserOrder: (side: Side, size: number, limitPrice?: number) => void;
+  submitUserOrder: (side: Side, size: number, limitPrice?: number, stopPrice?: number) => void;
   cancelUserOrders: () => void;
   user: AgentAccount;
   currentPrice: number;
@@ -29,14 +31,14 @@ const btn = (bg: string): React.CSSProperties => ({
 
 export function TradePanel({ submitUserOrder, cancelUserOrders, user, currentPrice, bestBid, bestAsk, restingOrders, unrealizedPnl, lastFill, orderNote }: Props) {
   const [size, setSize] = useState(100);
-  const [useLimit, setUseLimit] = useState(false);
-  const [limitPrice, setLimitPrice] = useState(currentPrice);
+  const [orderType, setOrderType] = useState<OrderType>('market');
+  const [price, setPrice] = useState(currentPrice); // limit or stop price, per orderType
 
-  // Seed the limit price from the live market when the user turns limit on, so
-  // it isn't a stale value that rests far from the current price.
-  const toggleLimit = (on: boolean) => {
-    setUseLimit(on);
-    if (on) setLimitPrice(Number(currentPrice.toFixed(2)));
+  // Seed the price from the live market when switching to limit/stop, so it isn't a
+  // stale value resting far from the current price.
+  const chooseType = (t: OrderType) => {
+    setOrderType(t);
+    if (t !== 'market') setPrice(Number(currentPrice.toFixed(2)));
   };
 
   const equity = user.cash + user.shares * currentPrice;
@@ -44,7 +46,12 @@ export function TradePanel({ submitUserOrder, cancelUserOrders, user, currentPri
   // Slippage: how far the average fill price moved from the pre-trade price.
   const slippagePct = lastFill ? ((lastFill.avgPrice - lastFill.priceBefore) / lastFill.priceBefore) * 100 : 0;
 
-  const submit = (side: Side) => submitUserOrder(side, size, useLimit ? limitPrice : undefined);
+  const submit = (side: Side) => submitUserOrder(
+    side,
+    size,
+    orderType === 'limit' ? price : undefined,
+    orderType === 'stop' ? price : undefined,
+  );
 
   return (
     <div>
@@ -95,24 +102,32 @@ export function TradePanel({ submitUserOrder, cancelUserOrders, user, currentPri
         }}
       />
 
-      {/* Order type: market (take now) vs limit (rest in the book) */}
-      <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#aaa', marginBottom: 8 }}>
-        <input type="checkbox" checked={useLimit} onChange={(e) => toggleLimit(e.target.checked)} />
-        Limit order
-        {useLimit && (
+      {/* Order type: market (take now) / limit (rest at a price) / stop (fire when crossed) */}
+      <div style={{ display: 'flex', gap: 6, marginBottom: 8, alignItems: 'center' }}>
+        {(['market', 'limit', 'stop'] as OrderType[]).map((t) => (
+          <button
+            key={t}
+            onClick={() => chooseType(t)}
+            style={{ flex: 1, padding: '5px 0', fontSize: 11, borderRadius: 5, border: '1px solid #333', cursor: 'pointer', textTransform: 'capitalize', background: orderType === t ? '#333' : '#1a1a2e', color: '#ddd' }}
+          >
+            {t}
+          </button>
+        ))}
+        {orderType !== 'market' && (
           <input
             type="number"
             step={0.01}
-            value={limitPrice}
-            onChange={(e) => setLimitPrice(Math.max(0.01, Number(e.target.value)))}
-            style={{ marginLeft: 'auto', width: 90, padding: '5px 8px', borderRadius: 6, border: '1px solid #333', background: '#0f0f1e', color: '#eee' }}
+            value={price}
+            onChange={(e) => setPrice(Math.max(0.01, Number(e.target.value)))}
+            title={orderType === 'limit' ? 'Limit price' : 'Stop trigger price'}
+            style={{ width: 84, padding: '5px 8px', borderRadius: 6, border: '1px solid #333', background: '#0f0f1e', color: '#eee' }}
           />
         )}
-      </label>
+      </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-        <button style={btn('#16a34a')} onClick={() => submit('buy')}>{useLimit ? 'Buy limit' : 'Buy'}</button>
-        <button style={btn('#dc2626')} onClick={() => submit('sell')}>{useLimit ? 'Sell limit' : 'Sell'}</button>
+        <button style={btn('#16a34a')} onClick={() => submit('buy')}>{orderType === 'market' ? 'Buy' : `Buy ${orderType}`}</button>
+        <button style={btn('#dc2626')} onClick={() => submit('sell')}>{orderType === 'market' ? 'Sell' : `Sell ${orderType}`}</button>
       </div>
 
       {/* Outcome of the last order: capped by cash, no liquidity, resting, etc. */}

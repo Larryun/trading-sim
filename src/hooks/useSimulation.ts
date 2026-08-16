@@ -178,9 +178,9 @@ export function useSimulation() {
 
   // Stable handler identities (they only touch refs + stable setState), so
   // React.memo'd children don't re-render just because a new closure was created.
-  const submitUserOrder = useCallback((side: Side, size: number, limitPrice?: number) => {
+  const submitUserOrder = useCallback((side: Side, size: number, limitPrice?: number, stopPrice?: number) => {
     if (size <= 0) return;
-    engineRef.current.queueUserOrder(side, size, limitPrice);
+    engineRef.current.queueUserOrder(side, size, limitPrice, stopPrice);
     // While paused, execute immediately against the current book (no next tick to
     // process the queue), so the order fills right away instead of doing nothing.
     if (!runningRef.current) {

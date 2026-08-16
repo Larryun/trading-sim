@@ -39,17 +39,19 @@ export function OrderBookPanel({ bids, asks, myOrders }: Props) {
 
       {/* The user's own resting limit orders */}
       <div>
-        <h4 style={{ margin: '0 0 8px', fontSize: 13, color: '#ccc' }}>My Limit Orders ({myOrders.length})</h4>
+        <h4 style={{ margin: '0 0 8px', fontSize: 13, color: '#ccc' }}>My Resting Orders ({myOrders.length})</h4>
         <div style={{ fontFamily: 'monospace', fontSize: 11, border: '1px solid #2a2a3a', borderRadius: 6, background: '#0f0f1e', maxHeight: 220, overflowY: 'auto' }}>
           <div style={{ display: 'flex', padding: '4px 10px', color: '#666', borderBottom: '1px solid #2a2a3a' }}>
             <span style={{ width: 48 }}>side</span>
             <span style={{ flex: 1, textAlign: 'right' }}>price</span>
             <span style={{ flex: 1, textAlign: 'right' }}>size</span>
           </div>
-          {myOrders.length === 0 && <div style={{ color: '#666', padding: 10 }}>No resting limit orders.</div>}
+          {myOrders.length === 0 && <div style={{ color: '#666', padding: 10 }}>No resting orders.</div>}
           {myOrders.map((o) => (
-            <div key={o.id} style={{ display: 'flex', padding: '3px 10px', borderBottom: '1px solid #1a1a2a' }}>
-              <span style={{ width: 48, color: o.side === 'buy' ? '#4ade80' : '#f87171' }}>{o.side.toUpperCase()}</span>
+            <div key={`${o.kind}${o.id}`} style={{ display: 'flex', padding: '3px 10px', borderBottom: '1px solid #1a1a2a' }}>
+              <span style={{ width: 64, color: o.side === 'buy' ? '#4ade80' : '#f87171' }}>
+                {o.side.toUpperCase()}{o.kind === 'stop' ? ' STOP' : ''}
+              </span>
               <span style={{ flex: 1, textAlign: 'right', color: '#eee' }}>${o.price.toFixed(2)}</span>
               <span style={{ flex: 1, textAlign: 'right', color: '#ddd' }}>{o.size.toFixed(1)}</span>
             </div>

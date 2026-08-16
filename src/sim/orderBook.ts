@@ -27,6 +27,16 @@ export interface RestingUserOrder {
   side: Side;
   price: number;
   size: number;
+  kind: 'limit' | 'stop'; // stop = a resting stop order (fires a market order when price crosses)
+}
+
+/** A resting stop order: dormant until the last trade price crosses `stopPrice`. */
+interface RestingStop {
+  side: Side;
+  size: number;
+  stopPrice: number;
+  ownerId: string;
+  id: number;
 }
 
 /**
@@ -42,6 +52,7 @@ export interface RestingUserOrder {
 export class OrderBook {
   private bids: RestingOrder[] = []; // sorted descending by price (best bid first)
   private asks: RestingOrder[] = []; // sorted ascending by price (best ask first)
+  private stops: RestingStop[] = []; // dormant stop orders, fired when price crosses their trigger
   private lastTradePrice: number;
 
   constructor(startingPrice: number) {
@@ -92,21 +103,49 @@ export class OrderBook {
     return { bids: aggregate(this.bids), asks: aggregate(this.asks) };
   }
 
-  /** The user's own resting limit orders. */
+  /** The user's own resting limit orders and stop orders. */
   getUserOrders(): RestingUserOrder[] {
-    return [...this.asks, ...this.bids]
+    const limits: RestingUserOrder[] = [...this.asks, ...this.bids]
       .filter((o) => o.ownerId === 'user')
-      .map((o) => ({ id: o.id, side: o.side, price: o.price, size: o.size }));
+      .map((o) => ({ id: o.id, side: o.side, price: o.price, size: o.size, kind: 'limit' as const }));
+    const stops: RestingUserOrder[] = this.stops
+      .filter((s) => s.ownerId === 'user')
+      .map((s) => ({ id: s.id, side: s.side, price: s.stopPrice, size: s.size, kind: 'stop' as const }));
+    return [...limits, ...stops];
   }
 
-  /** Remove all resting orders belonging to an owner (cancel / cancel-replace). */
+  /** Rest a stop order: dormant until `stopPrice` is crossed (see popTriggeredStops). */
+  submitStopOrder(side: Side, size: number, stopPrice: number, ownerId: string): void {
+    this.stops.push({ side, size, stopPrice: roundToTick(stopPrice), ownerId, id: nextOrderId++ });
+  }
+
+  /**
+   * Remove and return every stop whose trigger the last trade price has now crossed:
+   * a buy-stop fires once price rises to/through it, a sell-stop once price falls to it.
+   * Called repeatedly (each fired stop moves price) to produce stop-cascade chains.
+   */
+  popTriggeredStops(): RestingStop[] {
+    const px = this.lastTradePrice;
+    const fired: RestingStop[] = [];
+    this.stops = this.stops.filter((s) => {
+      const hit = s.side === 'buy' ? px >= s.stopPrice : px <= s.stopPrice;
+      if (hit) fired.push(s);
+      return !hit;
+    });
+    return fired;
+  }
+
+  /** Remove all resting orders (limits and stops) belonging to an owner. */
   cancelOrdersByOwner(ownerId: string): void {
     this.bids = this.bids.filter((o) => o.ownerId !== ownerId);
     this.asks = this.asks.filter((o) => o.ownerId !== ownerId);
+    this.stops = this.stops.filter((s) => s.ownerId !== ownerId);
   }
 
   countOrdersByOwner(ownerId: string): number {
-    return this.bids.filter((o) => o.ownerId === ownerId).length + this.asks.filter((o) => o.ownerId === ownerId).length;
+    return this.bids.filter((o) => o.ownerId === ownerId).length
+      + this.asks.filter((o) => o.ownerId === ownerId).length
+      + this.stops.filter((s) => s.ownerId === ownerId).length;
   }
 
   private insert(order: RestingOrder): void {

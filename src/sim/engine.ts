@@ -69,6 +69,7 @@ interface PendingUserOrder {
   side: Side;
   size: number;
   limitPrice?: number;
+  stopPrice?: number; // present => a stop order (rests dormant until price crosses it)
 }
 
 export class SimulationEngine {
@@ -210,8 +211,8 @@ export class SimulationEngine {
     if (agent) Object.assign(agent, patch);
   }
 
-  queueUserOrder(side: Side, size: number, limitPrice?: number): void {
-    this.pendingUserOrders.push({ side, size, limitPrice });
+  queueUserOrder(side: Side, size: number, limitPrice?: number, stopPrice?: number): void {
+    this.pendingUserOrders.push({ side, size, limitPrice, stopPrice });
   }
 
   cancelUserOrders(): void {
@@ -245,6 +246,12 @@ export class SimulationEngine {
   private runUserOrder(uo: PendingUserOrder, registry: Map<string, AgentAccount>): Trade[] {
     const px = this.book.getLastTradePrice();
     const requested = uo.size;
+    // Stop order: rest it dormant; it fires as a market order once price crosses (below).
+    if (uo.stopPrice != null) {
+      this.book.submitStopOrder(uo.side, requested, uo.stopPrice, 'user');
+      this.lastOrderNote = `${uo.side === 'buy' ? 'Buy' : 'Sell'}-stop resting — fires if price ${uo.side === 'buy' ? 'rises to' : 'falls to'} $${uo.stopPrice.toFixed(2)}.`;
+      return [];
+    }
     let size = requested;
     if (uo.side === 'sell') {
       size = Math.min(size, this.user.shares); // no shorting for the user
@@ -506,6 +513,28 @@ export class SimulationEngine {
       for (const t of this.runUserOrder(uo, registry)) tickTrades.push(t);
     }
     this.pendingUserOrders = [];
+
+    // Fire any resting stops the tick's price move has now triggered. Each fired stop
+    // is a market order that can move price further and trip MORE stops — a genuine
+    // book-level stop cascade. Loop until no more trigger (guarded against runaway).
+    for (let guard = 0; guard < 100; guard++) {
+      const triggered = this.book.popTriggeredStops();
+      if (triggered.length === 0) break;
+      for (const s of triggered) {
+        const acct = registry.get(s.ownerId);
+        let size = s.size;
+        if (acct) {
+          // Cap so a fired stop can't oversell holdings / overspend cash (no shorting via stops).
+          if (s.side === 'sell') size = Math.min(size, Math.max(0, acct.shares));
+          else { const p = this.book.getLastTradePrice(); size = Math.min(size, p > 0 ? acct.cash / p : 0); }
+        }
+        if (size < MIN_ORDER) continue;
+        for (const t of this.book.submitMarketOrder(s.side, size, s.ownerId, this.tick)) {
+          this.settle(t, registry);
+          tickTrades.push(t);
+        }
+      }
+    }
 
     // Aggregate this tick's volume (for the volume bars) and record the user's fills.
     let buyVol = 0;
