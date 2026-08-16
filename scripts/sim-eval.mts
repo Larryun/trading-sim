@@ -31,23 +31,30 @@ interface Config {
   seed?: SeedEntry[];
 }
 
+// Mirrors the app's opening cast (see createEngine in src/hooks/useSimulation.ts).
 const DEFAULT_SEED: SeedEntry[] = [
   { type: 'marketMaker', capital: 750000 },
   { type: 'marketMaker', capital: 750000 },
   { type: 'marketMaker', capital: 750000 },
   { type: 'marketMaker', capital: 750000 },
   { type: 'marketMaker', capital: 750000 },
+  { type: 'marketMaker', capital: 750000 },
   { type: 'trader', capital: 500000, style: 'value' },
   { type: 'trader', capital: 500000, style: 'value' },
   { type: 'trader', capital: 500000, style: 'value' },
-  { type: 'trader', capital: 40000, style: 'trend' },
-  { type: 'trader', capital: 40000, style: 'news' },
-  { type: 'trader', capital: 40000, style: 'contrarian' },
-  { type: 'trader', capital: 100000, style: 'adaptive' },
-  { type: 'noise', capital: 25000 },
-  { type: 'noise', capital: 25000 },
-  { type: 'panicSeller', capital: 40000 },
-  { type: 'panicSeller', capital: 40000 },
+  { type: 'whale', capital: 1500000, params: { targetShares: 3000, sliceSize: 60 } },
+  { type: 'trader', capital: 120000, style: 'adaptive' },
+  { type: 'trader', capital: 80000, style: 'trend' },
+  { type: 'trader', capital: 60000, style: 'news' },
+  { type: 'trader', capital: 60000, style: 'contrarian' },
+  { type: 'noise', capital: 20000 },
+  { type: 'noise', capital: 20000 },
+  { type: 'noise', capital: 20000 },
+  { type: 'noise', capital: 20000 },
+  { type: 'fomoHerd', capital: 30000 },
+  { type: 'fomoHerd', capital: 25000 },
+  { type: 'panicSeller', capital: 35000 },
+  { type: 'panicSeller', capital: 30000 },
 ];
 
 function std(xs: number[]): number {

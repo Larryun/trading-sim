@@ -23,22 +23,38 @@ const MAX_DISPLAY_BARS = 120;
 
 function createEngine(): SimulationEngine {
   const engine = new SimulationEngine();
-  // Empirically tuned mix (see the tuning workflow): deep, well-capitalized market
-  // makers provide the book; a strong VALUE-style trader cohort tethers price to the
-  // news-driven fundamental; a spread of other trader styles (trend/news/contrarian/
-  // adaptive) simulates a diverse crowd; panic sellers add downside pressure; noise churns.
-  for (let i = 0; i < 5; i++) engine.addAgent('marketMaker', 750000);
-  for (let i = 0; i < 3; i++) engine.addAgent('trader', 500000, 'value'); // anchor price to fair value
-  engine.addAgent('trader', 40000, 'trend');
-  engine.addAgent('trader', 40000, 'news');
-  engine.addAgent('trader', 40000, 'contrarian');
-  engine.addAgent('trader', 100000, 'adaptive'); // a learning multi-signal trader
-  engine.addAgent('noise', 25000);
-  engine.addAgent('noise', 25000);
-  engine.addAgent('panicSeller', 40000);
-  engine.addAgent('panicSeller', 40000);
 
-  // Not seeded by default (situational): FOMO herd, whale — available from the Add dropdown.
+  // The opening cast mirrors a real market's participant pyramid: a handful of
+  // well-capitalized institutions hold most of the capital, a few market makers
+  // provide nearly all the liquidity, a small professional cohort trades signals,
+  // and a numerous but individually small retail crowd supplies the churn.
+
+  // — Liquidity providers: few names, big balance sheets, most of the volume. Enough
+  //   of them to keep the book deep and the spread tight, as in a liquid real market.
+  for (let i = 0; i < 6; i++) engine.addAgent('marketMaker', 750000);
+
+  // — Institutions: the most capital, the fewest names. The value cohort is what
+  //   tethers price to the earnings-based fair value (the market's gravity).
+  for (let i = 0; i < 3; i++) engine.addAgent('trader', 500000, 'value');
+  const whale = engine.addAgent('whale', 1500000); // a fund rotating a large stake on valuation
+  engine.updateAgentParams(whale.id, { targetShares: 3000, sliceSize: 60 });
+
+  // — Professional/quant desks: medium capital, distinct edges.
+  engine.addAgent('trader', 120000, 'adaptive'); // a learning multi-signal fund
+  engine.addAgent('trader', 80000, 'trend'); // momentum / CTA
+  engine.addAgent('trader', 60000, 'news'); // event-driven
+  engine.addAgent('trader', 60000, 'contrarian'); // mean-reversion desk
+
+  // — Retail: many participants, small accounts. Uninformed churn plus the two
+  //   behavioral extremes that make rallies overshoot and selloffs cascade.
+  for (let i = 0; i < 4; i++) engine.addAgent('noise', 20000);
+  engine.addAgent('fomoHerd', 30000);
+  engine.addAgent('fomoHerd', 25000);
+  engine.addAgent('panicSeller', 35000);
+  engine.addAgent('panicSeller', 30000);
+
+  // Not seeded (situational, add from the dropdown): the synthetic-gamma options
+  // dealer, and the options speculator (which needs the options market enabled).
   return engine;
 }
 
