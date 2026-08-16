@@ -146,6 +146,16 @@ than adding resting depth. The tightest quotes among all makers set the spread;
 add makers or deepen their ladders and the book fills out, **remove them all and
 the book empties — the market goes illiquid until someone quotes again.**
 
+Two further things real makers do, both modeled:
+- **They trim size when it's risky.** As volatility widens a maker's spread, it also
+  **quotes smaller** — pulling capital back exactly when informed flow is most dangerous.
+- **They have an inventory limit.** A maker stops quoting the side that would *grow* an
+  already-large position (it keeps quoting the other side to work back toward flat) and
+  may go **short** to keep an offer up. Without a limit, a well-capitalized maker will
+  absorb an entire trend until it is broke — and a broke maker stops quoting altogether,
+  which is far worse for the market than a wider spread. This is why market makers earn
+  the spread but are *not* meant to take a directional view.
+
 ---
 
 ## 5. Fixed Share Supply (Float) & Conservation
@@ -252,7 +262,9 @@ into existence.
   stock: buys **calls** in bullish regimes, **puts** in bearish ones (long-only,
   cash-limited), holding to expiry. *Emergent effect:* its **open interest** is what the
   dealer must hedge, so a crowd of speculators makes **gamma squeezes/crashes emerge on
-  their own** — without you touching the chain. (Only active when the options market is on.)
+  their own** — without you touching the chain. (See section 11; the options market is on
+  by default.) Note it never asks whether an option is *cheap* — like real retail option
+  buyers it pays the variance risk premium, so it loses on average.
 
 - **Options dealer** — doesn't bet on direction; it **delta-hedges** an options book,
   trading only to stay neutral (`Δhedge ≈ −gamma × Δprice`). When **short gamma** (the
@@ -449,6 +461,48 @@ Change who's in the room, and you change the market's entire personality.
 
 ---
 
+## 11. Options, Delta-Hedging & the Gamma Squeeze
+
+The **Options** tab is a real, live options market (on by default), and it exists to
+teach one of the biggest forces in modern markets: **derivatives moving the underlying**.
+
+**The chain.** A rolling set of calls and puts at strikes around spot, priced with
+**Black-Scholes**. Two inputs are derived from the market rather than hardcoded:
+- **Implied volatility** tracks recent *realized* movement plus a **variance risk
+  premium** (~1.25×) — the reason option *sellers* earn money on average.
+- The pricing **rate** is the market's recent **drift**, so options are priced off the
+  **forward**. Without this, a market that trends for longer than an option lives would
+  hand directional buyers a free profit.
+
+**The greeks** (shown as *Market greeks* for the public's net position — the dealer is
+short exactly these):
+
+| Greek | Meaning |
+|---|---|
+| **Delta** | share-equivalent exposure — how many shares the position behaves like |
+| **Gamma** | how much that delta *changes* per $1 move — the squeeze driver |
+| **Vega** | P&L per 1 point of implied volatility |
+| **Theta** | time decay per tick — long options bleed it, sellers collect it |
+
+**The dealer.** Not an agent you add: a built-in counterparty that **writes** every
+option bought (by you or by speculator agents) and then **delta-hedges in the stock** to
+stay neutral. This is the crucial link — *option* demand becomes *stock* orders.
+
+**The gamma squeeze.** If the public is long calls, the dealer is **short gamma**: as
+price rises its delta grows, so it must **buy** stock, which pushes price up, which grows
+its delta again — a self-reinforcing loop. **Long gamma** does the opposite: the dealer
+sells rallies and buys dips, **pinning** price near the strike. Watch open interest pile
+up at a strike (a "**call wall**") and see price accelerate through it or stick to it.
+
+**Why it's bounded here.** Unconstrained gamma hedging destroys a market this small, so:
+the dealer hedges **passively** (resting limit orders, working into existing flow rather
+than taking every tick), holds a **position limit**, trades on a **balance sheet**, and
+total open interest is capped as a fraction of the float. Contracts are **×10 shares**
+rather than the real ×100, because this float is ~1000× smaller than a real one — keeping
+the option market *proportionate* to the stock it's written on.
+
+---
+
 ## Try These Experiments
 
 Use the agent panel to add/remove/tune participants, the supply bar to change the
@@ -487,6 +541,22 @@ own orders. Then try:
 
 ---
 
+### Engineer a gamma squeeze
+
+1. On the **Options** tab, buy a pile of **calls at the strike just above spot** (gamma is
+   strongest near the strike, and grows as *Ticks to expiry* counts down).
+2. Add two or three more **Options speculator** agents so open interest keeps building —
+   watch the **Open interest by strike** chart form a green "call wall".
+3. Now push price into that wall with large **market buys** (and/or add **FOMO herd** and
+   **trend** traders to pile on).
+4. Watch **Dealer hedge** climb on the Options tab: short gamma forces the dealer to buy
+   the rally, which lifts price, which raises its delta again.
+5. For a deliberately dramatic version, add the **Options dealer** *agent* with a strongly
+   negative **Net gamma** and large **Open interest** — a synthetic-gamma demo that isn't
+   bound by the real market's caps.
+
+---
+
 ## Caveats & Simplifications
 
 This is a **teaching model**, not a faithful replica of real markets. Keep the
@@ -504,8 +574,14 @@ simplifications in mind:
   or auctions.
 - **Stylized fundamentals.** Fair value is derived from a simple **earnings** model
   (EPS × a fixed multiple), moved by earnings reports and news — but there are no
-  real cash flows, balance sheets, interest rates, or analyst consensus underneath,
-  and it's a single shared estimate rather than many subjective ones.
+  real cash flows, balance sheets, or interest rates underneath, and it's a single
+  shared estimate rather than many subjective ones (there *is* an analyst-consensus
+  EPS, so surprises are measured against expectations).
+- **A scaled-down options market.** Black-Scholes pricing on one rolling expiry, with
+  contracts of ×10 shares (not ×100) and a capped total open interest, so the option
+  market stays proportionate to a float ~1000× smaller than a real one. There's no
+  volatility smile, no early exercise, no multi-expiry surface, and dealer hedging is
+  deliberately bounded (passive, position-limited) rather than free-running.
 - **Simplified shorting/leverage.** Shorting is collateralized crudely (by cash,
   with a simple maintenance-margin buy-in) rather than a real securities-lending
   market with borrow fees and locate constraints.

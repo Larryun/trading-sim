@@ -90,7 +90,9 @@ export function useSimulation() {
   const [sentiment, setSentiment] = useState(0);
   const [sentimentBreakdown, setSentimentBreakdown] = useState(() => engineRef.current.sentimentBreakdown);
   const [optionsEnabled, setOptionsEnabledState] = useState(engineRef.current.optionsEnabled);
-  const [optionChain, setOptionChain] = useState<ReturnType<SimulationEngine['getOptionChain']>>([]);
+  const [optionChain, setOptionChain] = useState<ReturnType<SimulationEngine['getOptionChain']>>(
+    () => (engineRef.current.optionsEnabled ? engineRef.current.getOptionChain() : []),
+  );
   const [optionPnl, setOptionPnl] = useState(0);
   const [userOptionValue, setUserOptionValue] = useState(0);
   const [ticksToExpiry, setTicksToExpiry] = useState(0);

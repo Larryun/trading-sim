@@ -23,6 +23,17 @@ export function OpenInterestChart({ rows, spot, height = 150 }: { rows: Row[]; s
 
   const maxOi = Math.max(1, ...rows.map((r) => Math.max(r.callOi, r.putOi)));
   const sorted = [...rows].sort((a, b) => a.strike - b.strike);
+
+  // Bail out BEFORE any strike math: the chain is empty on first paint (and after the
+  // market is closed out), and indexing sorted[0] then throws.
+  if (sorted.length === 0) {
+    return (
+      <div ref={ref} style={{ width: '100%', height, color: colors.muted, fontSize: 12, padding: 8 }}>
+        Waiting for the option chain…
+      </div>
+    );
+  }
+
   const n = Math.max(1, sorted.length);
   const slot = (width - PAD_L - PAD_R) / n;
   const bw = Math.min(slot * 0.5, 26);
