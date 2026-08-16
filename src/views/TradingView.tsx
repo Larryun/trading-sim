@@ -92,7 +92,7 @@ export function TradingView() {
 
         <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
           <div style={{ fontSize: 20, fontWeight: 700, color: '#4ade80' }}>${sim.currentPrice.toFixed(2)}</div>
-          <div style={{ fontSize: 11, color: '#22d3ee' }} title="Fundamental value — the 'true' value, moved permanently by news">
+          <div style={{ fontSize: 11, color: '#22d3ee' }} title="Fair value = EPS × valuation multiple; moves with earnings reports and guidance (news)">
             fair ${sim.fundamentalValue.toFixed(2)}
           </div>
         </div>

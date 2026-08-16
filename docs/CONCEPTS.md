@@ -80,10 +80,16 @@ the same price, first-come-first-served. In the sim the book is kept sorted by
 price with a stable sort, so earlier orders at a given price fill before later
 ones — the same fairness rule real exchanges use.
 
-**In the app:** the built-in market maker continuously posts a ladder of resting
-bids and asks around the last price, so there is always a two-sided book for your
-orders to hit. Your buys and sells (and the agents') arrive as market orders that
-take from that book.
+**Tick size:** real exchanges quote on a fixed price grid (e.g. $0.01), not a
+continuum. The sim snaps every resting order to that grid, so the book always shows
+distinct, clean price levels and orders at the same grid price aggregate together.
+
+**In the app:** there is **no backstop** liquidity — the book is only what
+participants post. **Market-maker agents** post ladders of resting bids and asks
+around the last price to provide most of it, but if they're removed or overwhelmed
+the book can genuinely **thin out or go one-sided** (then a market order may not
+fully fill). You can send either a **market** order (takes now) or a **limit**
+order (rests until the price reaches it).
 
 ---
 
@@ -165,10 +171,13 @@ and scarcity rallies.
 Trading only *moves* cash between participants (buyer down, seller up), so the
 market's total cash is otherwise conserved — and gets progressively **locked up in
 positions**, making buying power feel like it dries up. Real markets aren't closed:
-money flows in from outside. The sim models this with **dividends** — every 50
-ticks the "company" pays cash per share held to every owner, injecting fresh money
-(a stock's fundamental value is, after all, the present value of its future
-dividends). Turn the **Dividend** control up and holders keep getting buying power;
+money flows in from outside. The sim models this with **dividends** — set as an
+**annual yield** and paid **quarterly** (each earnings period), the "company" pays
+cash to every shareholder out of its earnings, injecting fresh money. Because it's
+paid *from earnings*, a dividend doesn't reduce the company's fair value, and value
+traders keep the price anchored to fair — so dividends add shareholder **income**
+without inflating the price. (A short position, holding negative shares, *owes* the
+dividend, just like in reality.) Turn the **Dividend** control up for a higher yield;
 set it to zero for a closed, zero-sum cash pool. This inflow is the mirror image of
 transaction fees, which drain cash out of the market (see *Transaction costs* in
 section 8).
@@ -179,8 +188,11 @@ section 8).
 
 The market's character comes from *who is trading*. Each agent type follows a
 simple rule, but a **population** of them produces rich, emergent dynamics. You
-can add, remove, and tune each type. Agents start with capital split roughly
-half in cash and half in shares, so they can trade either direction immediately.
+can add, remove, and tune each type. The *initial* agents start with capital split
+roughly half cash / half shares (so the market opens with a float to trade). An
+agent **you add** to a running market starts with **only cash** and must *buy* its
+position from the market — a realistic new entrant that doesn't conjure new shares
+into existence.
 
 - **Noise traders** — buy or sell essentially at random, with an adjustable
   frequency and order size. *Emergent effect:* random-walk jitter with no
@@ -236,21 +248,38 @@ half in cash and half in shares, so they can trade either direction immediately.
 
 ---
 
-## 7. Sentiment & News Events
+## 7. Fair Value, Earnings, Sentiment & News
 
-Real markets aren't a pure random walk because **information keeps arriving**.
-The sim models this as discrete **news events**.
+**Fair value is *derived*, not guessed.** The company has **earnings per share
+(EPS)**, and its fair value is those earnings **capitalized at a multiple**:
 
-Each news event has **two effects**, mirroring how real information works:
+```
+fair value = EPS × valuation multiple
+```
 
-- A **transient sentiment** burst — positive (bullish) or negative (bearish) —
-  that **decays** toward zero over the following ticks. This is the short-term
-  *reaction/overreaction*: news/informed agents trade in its direction and momentum
-  piles on, so price often overshoots.
-- A **permanent shift in the fundamental value** — the "true" value of the stock.
-  A good-news event *reprices the company upward for good*, not just for a moment.
-  Over many events the fundamental follows a **random walk**, producing the lasting
-  trends real stocks show (rather than always reverting to one fixed number).
+This is the essence of a real valuation (a P/E multiple, or equivalently a
+discounted-cash-flow / Gordon-growth model). EPS starts so fair value equals the
+opening price, then changes for concrete, *objective* reasons:
+
+- **Quarterly earnings reports** (every earnings period) grow EPS by a baseline
+  amount plus a random **beat/miss surprise**. The surprise is the main driver of
+  fair-value moves and also colors the mood (a beat is bullish); it's logged as a
+  news event ("Earnings beat +1.8%").
+- **News = guidance.** A news event revises **earnings expectations** (EPS), so the
+  fair value re-derives — good news raises expected earnings, bad news cuts them.
+
+Because fair value is `EPS × multiple`, it isn't a number nudged by hand — it falls
+out of the fundamentals. (Real fair value is *also* genuinely subjective — analysts
+disagree — but it's grounded in these objective inputs; here we use one shared
+estimate for clarity.)
+
+Each news event then has **two effects**, mirroring how real information works:
+
+- A **transient sentiment** burst that **decays** over the following ticks — the
+  short-term *reaction/overreaction*: sentiment-driven traders lean into it and
+  momentum piles on, so price often overshoots.
+- A **change in EPS** (expected earnings), which permanently re-derives fair value
+  — the lasting, fundamental part of the move.
 
 **Value-style traders anchor to this evolving fundamental** (not a fixed
 price): when price sits below it they accumulate, pulling the market back toward
