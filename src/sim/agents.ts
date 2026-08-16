@@ -273,11 +273,19 @@ export function decideOrder(agent: Agent, market: MarketState): OrderIntent[] {
       // a real maker trims size in fast markets. Gentle — from full size when calm down
       // to ~50% as the adaptive spread hits its cap (a stronger cut spirals volatility).
       const size = agent.quoteSize * Math.max(0.5, Math.min(1, agent.spreadBps / effSpreadBps));
+      // INVENTORY LIMIT: a real maker refuses to keep adding to a losing position. Once
+      // inventory hits the limit it stops quoting the side that would grow it (it still
+      // quotes the other side to work back toward flat). Without this a well-capitalized
+      // maker will absorb an entire trend until it is broke — and then the book loses a
+      // side entirely, which is far worse for the market than a wider spread.
+      const maxInv = agent.quoteSize * agent.levels * 2;
+      const canBuy = agent.shares < maxInv;
+      const canSell = agent.shares > -maxInv;
       const intents: OrderIntent[] = [];
       for (let level = 1; level <= agent.levels; level++) {
         // Innermost first, so if capital runs low the near-touch levels post first.
-        intents.push({ side: 'buy', size, limitPrice: Math.max(0.01, center - half * level) });
-        intents.push({ side: 'sell', size, limitPrice: center + half * level });
+        if (canBuy) intents.push({ side: 'buy', size, limitPrice: Math.max(0.01, center - half * level) });
+        if (canSell) intents.push({ side: 'sell', size, limitPrice: center + half * level });
       }
       return intents;
     }

@@ -53,10 +53,13 @@ function createEngine(): SimulationEngine {
   engine.addAgent('panicSeller', 35000);
   engine.addAgent('panicSeller', 30000);
 
-  // Options are left OFF at open (enable them on the Options tab). The options layer
-  // is functional but currently destabilizes the market when it runs by default — the
-  // dealer's hedge flow is large relative to this float — so it's opt-in for now, along
-  // with the speculator agents that trade the chain.
+  // — Options: live from the open. Speculators express views through calls/puts, and
+  //   their open interest is what the dealer delta-hedges in the stock — so gamma
+  //   effects (squeezes, pinning) arise on their own from real option demand. The
+  //   option market is deliberately sized to stay proportionate to the float.
+  engine.enableOptions(true);
+  engine.addAgent('speculator', 150000);
+  engine.addAgent('speculator', 100000);
   return engine;
 }
 
@@ -92,6 +95,7 @@ export function useSimulation() {
   const [fundamentalValue, setFundamentalValue] = useState(engineRef.current.fundamentalValue);
   const [eps, setEps] = useState(engineRef.current.eps);
   const valuationMultiple = engineRef.current.valuationMultiple;
+  const contractMultiplier = engineRef.current.contractMultiplier;
   const [recentPrices, setRecentPrices] = useState<number[]>([]); // recent window for decision explanations
   const [tick, setTick] = useState(0);
   const [totalDividendsPaid, setTotalDividendsPaid] = useState(0);
@@ -320,6 +324,7 @@ export function useSimulation() {
     optionPnl,
     ticksToExpiry,
     dealerState,
+    contractMultiplier,
     autoNews,
     triggerEvent,
     toggleAutoNews,

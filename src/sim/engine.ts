@@ -56,7 +56,11 @@ const VALUATION_MULTIPLE = 20; // price/earnings multiple applied to EPS to get 
 // whatever the public is long and delta-hedges in the stock — so gamma squeezes emerge
 // from real open interest rather than a slider.
 const TICKS_PER_YEAR = 800; // 4 quarters × 200 ticks — for Black-Scholes time-to-expiry
-const CONTRACT_MULTIPLIER = 100; // shares per contract (like real US options)
+// Shares per contract. Real US options are ×100, but this market's float is a toy
+// ~25k shares (~1000× smaller than a real one), so a ×100 contract would let a single
+// bet control a tenth of the whole float. Scaled to ×10 to keep the option market
+// PROPORTIONATE to the underlying, the way listed options are in reality.
+const CONTRACT_MULTIPLIER = 10;
 const OPTION_LIFETIME = 100; // ticks until a freshly-issued chain expires (~a month, like real listed options)
 const OPTION_STRIKE_OFFSETS = [-0.1, -0.05, 0, 0.05, 0.1]; // strikes as fractions around spot
 const OPTION_HEDGE_RATE = 0.2; // fraction of the delta gap the dealer hedges per tick (gradual)
@@ -64,12 +68,19 @@ const OPTION_DEALER_CAPITAL = 2000000; // the dealer desk's balance sheet — it
 const OPTION_IV_PREMIUM = 1.25; // implied vol runs a bit above realized (the variance risk premium)
 const OPTION_IV_MIN = 0.15; // floor / cap on implied vol (annualized)
 const OPTION_IV_MAX = 1.2;
-const OPTION_DEALER_POS_LIMIT = 0.2; // dealer hedge inventory capped to this × shares outstanding
+const OPTION_DEALER_POS_LIMIT = 0.08; // dealer hedge inventory capped to this × shares outstanding
+// Structural cap on the whole option market: total open-interest NOTIONAL stays under
+// this fraction of the float. Dealers only write what they can hedge, so an option
+// market can't grow to dwarf the stock it's written on.
+const OPTION_MAX_OI_FRACTION = 0.15;
 
 // Short selling: bearish "view" traders can borrow & sell (shares go negative),
 // collateralized by their cash. If a rising price wipes out that collateral they
 // get margin-called and forced to buy back — the fuel for short squeezes.
-const CAN_SHORT = new Set<AgentType>(['trader', 'dealer']);
+// Makers are included so a maker that has sold its inventory can still post an ask
+// (real makers go short routinely to quote both sides). This is only safe alongside the
+// maker's inventory limit in agents.ts — unlimited maker shorting bankrupts them.
+const CAN_SHORT = new Set<AgentType>(['trader', 'dealer', 'marketMaker']);
 const SHORT_COLLATERAL = 1; // may short up to this * cash worth of shares
 const MAINT_MARGIN = 0.25; // margin call when equity falls below this * short exposure
 // Sentiment realism: beyond discrete news jumps, the "mood" also reacts to recent
@@ -183,6 +194,13 @@ export class SimulationEngine {
   // realized vol would make every option wildly overpriced, bleeding buyers dry and
   // handing the dealer an ever-growing cash pile (and thus unlimited hedging power).
   optionImpliedVol = 0.2; // annualized vol used to price the chain
+  /**
+   * The rate the chain is priced off — i.e. the market's recent DRIFT, annualized.
+   * Real options are priced off the forward, not spot, so any expected drift is already
+   * charged for. Without this, a market that trends persistently for longer than an
+   * option's life hands directional buyers a free edge (and bleeds the dealer dry).
+   */
+  optionRate = 0;
   userOptionCashFlow = 0; // cumulative user cash from options (−premium paid, +premium/payout received)
   private nextContractId = 1;
   optionsDealer: AgentAccount = { startingCapital: 0, cash: 0, shares: 0, avgCost: 0, realizedPnl: 0, tradeCount: 0 };
@@ -342,6 +360,19 @@ export class SimulationEngine {
     return Math.max(OPTION_IV_MIN, Math.min(OPTION_IV_MAX, annual));
   }
 
+  /**
+   * Recent drift, annualized — used as the pricing rate so the chain is priced off the
+   * FORWARD. This market trends for longer than an option lives, so without charging
+   * for the drift, buying in the trend direction would be a free (dealer-funded) edge.
+   */
+  private driftAnnual(): number {
+    const w = this.priceRing.window(300).data;
+    if (w.length < 30 || w[0] <= 0) return 0;
+    const perTick = Math.log(w[w.length - 1] / w[0]) / (w.length - 1);
+    const annual = perTick * TICKS_PER_YEAR;
+    return Math.max(-1.5, Math.min(1.5, annual));
+  }
+
   private accountOf(ownerId: string): AgentAccount | undefined {
     if (ownerId === 'user') return this.user;
     if (ownerId === 'optionsDealer') return this.optionsDealer;
@@ -359,6 +390,18 @@ export class SimulationEngine {
     let s = 0;
     for (const [, pos] of this.optionPositions) s += Math.abs(pos.get(contractId) ?? 0);
     return s;
+  }
+
+  /** Open interest across the whole chain, in contracts. */
+  totalOpenInterest(): number {
+    let s = 0;
+    for (const [, pos] of this.optionPositions) for (const [, q] of pos) s += Math.abs(q);
+    return s;
+  }
+
+  /** Shares per option contract (scaled to this market's float). */
+  get contractMultiplier(): number {
+    return CONTRACT_MULTIPLIER;
   }
 
   /** Issue a fresh chain of calls+puts at strikes around spot, with a new expiry. */
@@ -381,7 +424,7 @@ export class SimulationEngine {
     const tau = this.optionTau();
     const userPos = this.optionPositions.get('user');
     return this.optionChain.map((c) => {
-      const g = blackScholes(c.type, spot, c.strike, tau, this.optionImpliedVol);
+      const g = blackScholes(c.type, spot, c.strike, tau, this.optionImpliedVol, this.optionRate);
       return { id: c.id, type: c.type, strike: c.strike, price: g.price, delta: g.delta, gamma: g.gamma, userQty: userPos?.get(c.id) ?? 0, openInterest: this.openInterestOf(c.id) };
     });
   }
@@ -393,7 +436,7 @@ export class SimulationEngine {
     const acct = this.accountOf(ownerId);
     if (!c || !acct) return;
     const spot = this.book.getLastTradePrice();
-    const price = blackScholes(c.type, spot, c.strike, this.optionTau(), this.optionImpliedVol).price;
+    const price = blackScholes(c.type, spot, c.strike, this.optionTau(), this.optionImpliedVol, this.optionRate).price;
     const pos = this.optionPos(ownerId);
     const held = pos.get(contractId) ?? 0;
     let q = qty;
@@ -423,7 +466,7 @@ export class SimulationEngine {
     let v = 0;
     if (pos) for (const c of this.optionChain) {
       const qty = pos.get(c.id) ?? 0;
-      if (qty !== 0) v += qty * blackScholes(c.type, spot, c.strike, tau, this.optionImpliedVol).price * CONTRACT_MULTIPLIER;
+      if (qty !== 0) v += qty * blackScholes(c.type, spot, c.strike, tau, this.optionImpliedVol, this.optionRate).price * CONTRACT_MULTIPLIER;
     }
     return v;
   }
@@ -454,7 +497,7 @@ export class SimulationEngine {
     const spot = this.book.getLastTradePrice();
     const tau = this.optionTau();
     const deltaByContract = new Map<number, number>();
-    for (const c of this.optionChain) deltaByContract.set(c.id, blackScholes(c.type, spot, c.strike, tau, this.optionImpliedVol).delta);
+    for (const c of this.optionChain) deltaByContract.set(c.id, blackScholes(c.type, spot, c.strike, tau, this.optionImpliedVol, this.optionRate).delta);
     let delta = 0;
     for (const [, pos] of this.optionPositions) {
       for (const [cid, qty] of pos) {
@@ -489,12 +532,15 @@ export class SimulationEngine {
       candidates.sort((x, y) => Math.abs(x.strike - target) - Math.abs(y.strike - target));
       const pick = candidates[0];
       if (!pick) continue;
-      const price = blackScholes(pick.type, spot, pick.strike, this.optionTau(), this.optionImpliedVol).price;
+      const price = blackScholes(pick.type, spot, pick.strike, this.optionTau(), this.optionImpliedVol, this.optionRate).price;
       const perContract = price * CONTRACT_MULTIPLIER;
       // Budget off its MANDATE (starting capital), not its current pile: otherwise a
       // winning streak compounds into ever-larger bets that swamp the whole market.
       const budget = a.budgetFrac * Math.min(a.cash, a.startingCapital);
-      const qty = perContract > 0 ? Math.floor(budget / perContract) : 0;
+      let qty = perContract > 0 ? Math.floor(budget / perContract) : 0;
+      // Respect the market-wide open-interest cap (dealers only write what they can hedge).
+      const oiRoom = (OPTION_MAX_OI_FRACTION * this.sharesOutstanding) / CONTRACT_MULTIPLIER - this.totalOpenInterest();
+      qty = Math.min(qty, Math.floor(Math.max(0, oiRoom)));
       if (qty >= 1) this.tradeOption(pick.id, qty, a.id);
     }
   }
@@ -832,7 +878,10 @@ export class SimulationEngine {
 
     // Re-mark implied vol off recent realized vol (annualized) so the chain is priced
     // fairly rather than systematically rich or cheap.
-    if (this.optionsEnabled) this.optionImpliedVol = this.realizedAnnualVol();
+    if (this.optionsEnabled) {
+      this.optionImpliedVol = this.realizedAnnualVol();
+      this.optionRate = this.driftAnnual();
+    }
 
     // Options speculators buy calls/puts by regime — building the open interest the
     // dealer then hedges (so gamma squeezes emerge from real option demand).
@@ -859,7 +908,14 @@ export class SimulationEngine {
         hedgeSize = Math.min(hedgeSize, Math.max(0, this.optionsDealer.shares + shortCap));
       }
       if (hedgeSize >= MIN_ORDER) {
-        for (const t of this.book.submitMarketOrder(delta > 0 ? 'buy' : 'sell', hedgeSize, 'optionsDealer', this.tick)) {
+        // Hedge PASSIVELY: join the near side of the book with a resting limit order
+        // instead of taking with a market order every tick. A dealer that takes
+        // liquidity relentlessly in one direction walks the book away and drains the
+        // very liquidity it needs; real desks work their hedge into existing flow.
+        this.book.cancelOrdersByOwner('optionsDealer');
+        const side: Side = delta > 0 ? 'buy' : 'sell';
+        const join = side === 'buy' ? (this.bestBid ?? hp) : (this.bestAsk ?? hp);
+        for (const t of this.book.submitLimitOrder(side, hedgeSize, join, 'optionsDealer', this.tick)) {
           this.settle(t, registry);
           tickTrades.push(t);
         }

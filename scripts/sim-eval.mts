@@ -56,6 +56,8 @@ const DEFAULT_SEED: SeedEntry[] = [
   { type: 'fomoHerd', capital: 25000 },
   { type: 'panicSeller', capital: 35000 },
   { type: 'panicSeller', capital: 30000 },
+  { type: 'speculator', capital: 150000 },
+  { type: 'speculator', capital: 100000 },
 ];
 
 function std(xs: number[]): number {
@@ -71,7 +73,7 @@ function evaluate(cfg: Config) {
   if (cfg.feeBps != null) e.feeBps = cfg.feeBps;
   if (cfg.fundamentalImpact != null) e.fundamentalImpact = cfg.fundamentalImpact;
   if (cfg.sentimentDecay != null) e.sentimentDecay = cfg.sentimentDecay;
-  e.enableOptions(cfg.optionsEnabled ?? false);
+  e.enableOptions(cfg.optionsEnabled ?? true);
 
   for (const s of cfg.seed ?? DEFAULT_SEED) {
     const a = e.addAgent(s.type, s.capital, s.style);

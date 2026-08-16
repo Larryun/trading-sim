@@ -52,6 +52,7 @@ export function OptionsView() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
             <Tile label="Spot" value={`$${spot.toFixed(2)}`} color={colors.up} />
             <Tile label="Ticks to expiry" value={sim.ticksToExpiry.toLocaleString()} />
+            <Tile label="Contract size" value={`×${sim.contractMultiplier} sh`} title="Shares per contract — scaled to this market's float so the option market stays proportionate to the underlying" />
             <Tile label="Your option P&L" value={fmtMoney(sim.optionPnl)} color={sim.optionPnl >= 0 ? colors.up : colors.down} />
             <Tile label="Implied vol" value={`${(sim.dealerState.impliedVol * 100).toFixed(0)}%`} title="Annualized vol used to price the chain — tracks recent realized volatility plus a risk premium" />
             <Tile label="Dealer hedge" value={`${Math.round(sim.dealerState.shares).toLocaleString()} sh`}
