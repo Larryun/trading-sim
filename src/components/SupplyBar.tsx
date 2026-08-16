@@ -10,7 +10,7 @@ function fmt(n: number): string {
 }
 
 export function SupplyBar({ floatBreakdown }: Props) {
-  const { total, agents, user } = floatBreakdown;
+  const { total, agents, user, dealer } = floatBreakdown;
   const pct = (n: number) => (total > 0 ? (n / total) * 100 : 0);
 
   return (
@@ -23,11 +23,15 @@ export function SupplyBar({ floatBreakdown }: Props) {
       {/* Ownership breakdown bar: agents vs you */}
       <div style={{ flex: 1, minWidth: 220 }}>
         <div style={{ display: 'flex', height: 12, borderRadius: 6, overflow: 'hidden', border: `1px solid ${colors.border}` }}>
-          <div style={{ width: `${pct(agents)}%`, background: '#60a5fa' }} title={`Agents: ${fmt(agents)}`} />
-          <div style={{ width: `${pct(user)}%`, background: colors.user }} title={`You: ${fmt(user)}`} />
+          {/* Widths are clamped at 0: a short position holds NEGATIVE shares, which would
+              otherwise render as a negative width and silently distort the bar. */}
+          <div style={{ width: `${Math.max(0, pct(agents))}%`, background: '#60a5fa' }} title={`Agents: ${fmt(agents)}`} />
+          <div style={{ width: `${Math.max(0, pct(dealer))}%`, background: '#eab308' }} title={`Options dealer (hedge inventory): ${fmt(dealer)}`} />
+          <div style={{ width: `${Math.max(0, pct(user))}%`, background: colors.user }} title={`You: ${fmt(user)}`} />
         </div>
-        <div style={{ display: 'flex', gap: 14, fontSize: 11, color: colors.muted, marginTop: 4, ...tabularNums }}>
+        <div style={{ display: 'flex', gap: 14, fontSize: 11, color: colors.muted, marginTop: 4, flexWrap: 'wrap', ...tabularNums }}>
           <span><span style={{ color: '#60a5fa' }}>■</span> agents {fmt(agents)} ({pct(agents).toFixed(0)}%)</span>
+          {Math.abs(dealer) > 0.01 && <span><span style={{ color: '#eab308' }}>■</span> dealer {fmt(dealer)} ({pct(dealer).toFixed(1)}%)</span>}
           <span><span style={{ color: colors.user }}>■</span> you {fmt(user)} ({pct(user).toFixed(1)}%)</span>
         </div>
       </div>

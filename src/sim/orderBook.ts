@@ -148,6 +148,44 @@ export class OrderBook {
     this.stops = this.stops.filter((s) => s.ownerId !== ownerId);
   }
 
+  /**
+   * Cash already committed to an owner's resting BUY orders. New buys must be sized
+   * against cash minus this, or several resting orders can each spend the same dollars
+   * and overdraw the account when they all fill.
+   */
+  restingBuyNotional(ownerId: string): number {
+    let n = 0;
+    for (const o of this.bids) if (o.ownerId === ownerId) n += o.price * o.size;
+    return n;
+  }
+
+  /** Shares already committed to an owner's resting SELL orders. */
+  restingSellSize(ownerId: string): number {
+    let s = 0;
+    for (const o of this.asks) if (o.ownerId === ownerId) s += o.size;
+    return s;
+  }
+
+  /**
+   * The largest quantity a market buy can afford with `cash`, walking the actual ask
+   * ladder (each level costs more). Sizing off the best ask alone overspends whenever
+   * the order walks past the touch.
+   */
+  maxBuyableForCash(cash: number, feeBps = 0, ownerId?: string): number {
+    const feeMul = 1 + feeBps / 10000;
+    let left = cash;
+    let shares = 0;
+    for (const o of this.asks) {
+      if (ownerId != null && o.ownerId === ownerId) continue; // can't buy from itself
+      const costPer = o.price * feeMul;
+      if (costPer <= 0 || left <= 0) break;
+      const affordable = left / costPer;
+      if (affordable >= o.size) { shares += o.size; left -= o.size * costPer; }
+      else { shares += affordable; left = 0; break; }
+    }
+    return shares;
+  }
+
   countOrdersByOwner(ownerId: string): number {
     return this.bids.filter((o) => o.ownerId === ownerId).length
       + this.asks.filter((o) => o.ownerId === ownerId).length
@@ -199,9 +237,14 @@ export class OrderBook {
     let remaining = size;
     const book = side === 'buy' ? this.asks : this.bids;
 
-    while (remaining > 1e-9 && book.length > 0) {
-      const best = book[0];
-      if (best.ownerId === ownerId) break; // never trade with your own resting order
+    // Walk the book with an index so self-match prevention SKIPS the owner's own resting
+    // orders and keeps matching the liquidity behind them. Aborting instead (a `break`)
+    // would hide a live book: an owner resting at the touch could get "no liquidity" even
+    // with plenty of other depth available.
+    let i = 0;
+    while (remaining > 1e-9 && i < book.length) {
+      const best = book[i];
+      if (best.ownerId === ownerId) { i++; continue; } // never trade with your own order
       const crosses = side === 'buy' ? best.price <= limitPrice : best.price >= limitPrice;
       if (!crosses) break;
 
@@ -219,7 +262,7 @@ export class OrderBook {
 
       remaining -= fillSize;
       best.size -= fillSize;
-      if (best.size <= 1e-9) book.shift();
+      if (best.size <= 1e-9) book.splice(i, 1); // consumed — next order shifts into place
     }
 
     return trades;

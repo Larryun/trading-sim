@@ -15,6 +15,7 @@ export interface FloatBreakdown {
   total: number;
   agents: number;
   user: number;
+  dealer: number; // the options dealer's hedge inventory (also part of the float)
 }
 
 // Show only the most recent bars so the chart is a readable, fixed-width
@@ -68,6 +69,7 @@ function floatOf(engine: SimulationEngine): FloatBreakdown {
     total: engine.sharesOutstanding,
     agents: engine.agents.reduce((s, a) => s + a.shares, 0),
     user: engine.user.shares,
+    dealer: engine.optionsDealer.shares,
   };
 }
 
@@ -90,6 +92,7 @@ export function useSimulation() {
   const [optionsEnabled, setOptionsEnabledState] = useState(engineRef.current.optionsEnabled);
   const [optionChain, setOptionChain] = useState<ReturnType<SimulationEngine['getOptionChain']>>([]);
   const [optionPnl, setOptionPnl] = useState(0);
+  const [userOptionValue, setUserOptionValue] = useState(0);
   const [ticksToExpiry, setTicksToExpiry] = useState(0);
   const [dealerState, setDealerState] = useState(() => engineRef.current.optionsDealerState);
   const [fundamentalValue, setFundamentalValue] = useState(engineRef.current.fundamentalValue);
@@ -170,6 +173,7 @@ export function useSimulation() {
     if (engine.optionsEnabled) {
       setOptionChain(engine.getOptionChain());
       setOptionPnl(engine.optionPnl);
+      setUserOptionValue(engine.userOptionValue);
       setTicksToExpiry(Math.max(0, engine.optionExpiryTick - engine.tick));
       setDealerState(engine.optionsDealerState);
     }
@@ -322,6 +326,7 @@ export function useSimulation() {
     optionChain,
     tradeOption,
     optionPnl,
+    userOptionValue,
     ticksToExpiry,
     dealerState,
     contractMultiplier,

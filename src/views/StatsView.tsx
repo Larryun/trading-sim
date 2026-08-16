@@ -48,7 +48,9 @@ export function StatsView() {
   const totalTrades = agents.reduce((s, a) => s + a.tradeCount, 0);
   const spread = bestBid != null && bestAsk != null ? bestAsk - bestBid : null;
   const gapPct = fundamentalValue > 0 ? ((currentPrice - fundamentalValue) / fundamentalValue) * 100 : 0;
-  const userEquity = user.cash + user.shares * currentPrice;
+  // Include open-option mark value: the premium already left cash, so omitting it
+  // would understate the user's equity and P&L.
+  const userEquity = user.cash + user.shares * currentPrice + sim.userOptionValue;
 
   const pnlData = rows.map((r) => ({ label: r.label, pnl: Number((r.equity - r.start).toFixed(0)), color: r.color }));
 

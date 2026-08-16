@@ -30,18 +30,24 @@ export function DepthChart({ bids, asks, height = 150 }: { bids: BookLevel[]; as
   const y = (c: number) => PAD_T + (1 - c / yMax) * plotH;
   const baseY = PAD_T + plotH;
 
-  // Step-area path for one side. `sorted` is by ascending price.
-  const area = (pts: { price: number; cum: number }[]): string => {
+  /**
+   * Step-area path for one side. `pts` must be ordered from the TOUCH outward (best
+   * price first, cumulative size increasing). Each level's cumulative depth is drawn
+   * over the band from its own price out to the next level — not back over the previous
+   * band, which would paint the next level's larger size at the touch and hugely
+   * overstate the depth actually available at the best bid/ask.
+   */
+  const area = (pts: { price: number; cum: number }[], outward: 'left' | 'right'): string => {
     if (pts.length === 0) return '';
-    const sorted = [...pts].sort((p, q) => p.price - q.price);
-    let d = `M${x(sorted[0].price).toFixed(1)},${baseY.toFixed(1)}`;
-    let prevX = x(sorted[0].price);
-    for (const pt of sorted) {
-      const yy = y(pt.cum).toFixed(1);
-      d += ` L${prevX.toFixed(1)},${yy} L${x(pt.price).toFixed(1)},${yy}`; // step: horizontal then to point height
-      prevX = x(pt.price);
+    const edge = outward === 'right' ? PAD_L + plotW : PAD_L;
+    let d = `M${x(pts[0].price).toFixed(1)},${baseY.toFixed(1)}`;
+    for (let i = 0; i < pts.length; i++) {
+      const yy = y(pts[i].cum);
+      const from = x(pts[i].price);
+      const to = i + 1 < pts.length ? x(pts[i + 1].price) : edge; // out to the next level / the edge
+      d += ` L${from.toFixed(1)},${yy.toFixed(1)} L${to.toFixed(1)},${yy.toFixed(1)}`;
     }
-    d += ` L${prevX.toFixed(1)},${baseY.toFixed(1)} Z`;
+    d += ` L${edge.toFixed(1)},${baseY.toFixed(1)} Z`;
     return d;
   };
 
@@ -55,8 +61,8 @@ export function DepthChart({ bids, asks, height = 150 }: { bids: BookLevel[]; as
         <div style={{ color: colors.muted, padding: 8, fontSize: 12 }}>Book is empty.</div>
       ) : (
         <svg width={width} height={height}>
-          <path d={area(bidCum)} fill={`${colors.up}33`} stroke={colors.up} strokeWidth={1.25} />
-          <path d={area(askCum)} fill={`${colors.down}33`} stroke={colors.down} strokeWidth={1.25} />
+          <path d={area(bidCum, 'left')} fill={`${colors.up}33`} stroke={colors.up} strokeWidth={1.25} />
+          <path d={area(askCum, 'right')} fill={`${colors.down}33`} stroke={colors.down} strokeWidth={1.25} />
           {midX != null && <line x1={midX} y1={PAD_T} x2={midX} y2={baseY} stroke={colors.border} strokeDasharray="2 3" />}
           {/* price axis: min / mid / max */}
           <text x={PAD_L} y={height - 4} fontSize={10} fontFamily={mono} fill={colors.muted}>${xMin.toFixed(2)}</text>

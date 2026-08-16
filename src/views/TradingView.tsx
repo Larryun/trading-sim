@@ -32,7 +32,8 @@ export function TradingView() {
   const [showParams, setShowParams] = useState(false);
 
   const spread = sim.bestBid != null && sim.bestAsk != null ? sim.bestAsk - sim.bestBid : null;
-  const userEquity = sim.user.cash + sim.user.shares * sim.currentPrice;
+  // Equity must include the mark value of open options — the premium already left cash.
+  const userEquity = sim.user.cash + sim.user.shares * sim.currentPrice + sim.userOptionValue;
   const userPnl = userEquity - sim.user.startingCapital;
   const gapPct = sim.fundamentalValue > 0 ? ((sim.currentPrice - sim.fundamentalValue) / sim.fundamentalValue) * 100 : 0;
   const halfLife = Math.round(Math.log(0.5) / Math.log(sim.sentimentDecay));
@@ -149,6 +150,7 @@ export function TradingView() {
               setUserCanShort={sim.setUserCanShort}
               userMargin={sim.userMargin}
               spark={sim.getPnlSpark('user')}
+              optionValue={sim.userOptionValue}
             />
           </div>
           <div style={panel}>

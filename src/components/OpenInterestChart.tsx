@@ -27,10 +27,25 @@ export function OpenInterestChart({ rows, spot, height = 150 }: { rows: Row[]; s
   const slot = (width - PAD_L - PAD_R) / n;
   const bw = Math.min(slot * 0.5, 26);
 
-  const strikes = sorted.map((r) => r.strike);
-  const sMin = Math.min(...strikes, spot);
-  const sMax = Math.max(...strikes, spot);
-  const spotX = sMax > sMin ? PAD_L + ((spot - sMin) / (sMax - sMin)) * (width - PAD_L - PAD_R) : width / 2;
+  // The bars sit on an ORDINAL (evenly-spaced) scale, so the spot marker has to be placed
+  // on that same scale — interpolating between the two strikes that bracket spot. Using a
+  // linear price scale here would misplace the marker (and pin it to an edge once spot
+  // leaves the strike range).
+  const cxOf = (i: number) => PAD_L + slot * (i + 0.5);
+  let spotX = cxOf(0);
+  if (sorted.length === 1) spotX = cxOf(0);
+  else if (spot <= sorted[0].strike) spotX = cxOf(0);
+  else if (spot >= sorted[sorted.length - 1].strike) spotX = cxOf(sorted.length - 1);
+  else {
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const a = sorted[i].strike, b = sorted[i + 1].strike;
+      if (spot >= a && spot <= b) {
+        const t = b > a ? (spot - a) / (b - a) : 0;
+        spotX = cxOf(i) + t * (cxOf(i + 1) - cxOf(i));
+        break;
+      }
+    }
+  }
 
   const totalOi = rows.reduce((s, r) => s + r.callOi + r.putOi, 0);
 

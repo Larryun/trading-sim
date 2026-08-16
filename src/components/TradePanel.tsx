@@ -24,6 +24,7 @@ interface Props {
   setUserCanShort: (on: boolean) => void;
   userMargin: UserMargin;
   spark: number[];
+  optionValue: number;
 }
 
 const chip = (active: boolean): React.CSSProperties => ({
@@ -37,7 +38,7 @@ const numInput: React.CSSProperties = {
   width: '100%', padding: '7px 9px', borderRadius: 6, border: `1px solid ${colors.border}`, background: colors.bg0, color: colors.text, boxSizing: 'border-box', ...tabularNums,
 };
 
-export function TradePanel({ submitUserOrder, user, currentPrice, bestBid, bestAsk, unrealizedPnl, lastFill, orderNote, userCanShort, setUserCanShort, userMargin, spark }: Props) {
+export function TradePanel({ submitUserOrder, user, currentPrice, bestBid, bestAsk, unrealizedPnl, lastFill, orderNote, userCanShort, setUserCanShort, userMargin, spark, optionValue }: Props) {
   const [size, setSize] = useState(100);
   const [orderType, setOrderType] = useState<OrderType>('market');
   const [price, setPrice] = useState(currentPrice);
@@ -48,8 +49,12 @@ export function TradePanel({ submitUserOrder, user, currentPrice, bestBid, bestA
   };
   const submit = (side: Side) => submitUserOrder(side, size, orderType === 'limit' ? price : undefined, orderType === 'stop' ? price : undefined);
 
-  const equity = user.cash + user.shares * currentPrice;
-  const slippagePct = lastFill ? ((lastFill.avgPrice - lastFill.priceBefore) / lastFill.priceBefore) * 100 : 0;
+  const equity = user.cash + user.shares * currentPrice + optionValue; // options are part of equity
+  // Side-normalized slippage: a higher fill hurts a BUY but helps a SELL, so flip the
+  // sign for sells. Positive = the fill went against you.
+  const slippagePct = lastFill
+    ? ((lastFill.avgPrice - lastFill.priceBefore) / lastFill.priceBefore) * 100 * (lastFill.side === 'buy' ? 1 : -1)
+    : 0;
   const isShort = user.shares < -1e-6;
 
   return (
@@ -100,7 +105,7 @@ export function TradePanel({ submitUserOrder, user, currentPrice, bestBid, bestA
       {lastFill && (
         <div style={{ fontSize: 11, color: colors.muted, marginBottom: 8, ...tabularNums }}>
           last {lastFill.side} {lastFill.size.toFixed(0)}@${lastFill.avgPrice.toFixed(2)} · slippage{' '}
-          <span style={{ color: pnlColor(-Math.abs(slippagePct) * Math.sign(slippagePct === 0 ? 1 : slippagePct)) }}>{slippagePct >= 0 ? '+' : ''}{slippagePct.toFixed(2)}%</span>
+          <span style={{ color: pnlColor(-slippagePct) }}>{slippagePct >= 0 ? '+' : ''}{slippagePct.toFixed(2)}%</span>
         </div>
       )}
 

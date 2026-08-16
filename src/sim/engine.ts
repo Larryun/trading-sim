@@ -303,6 +303,23 @@ export class SimulationEngine {
 
   removeAgent(id: string): void {
     this.book.cancelOrdersByOwner(id); // pull its resting quotes
+    // Buy out any open option position at its mark, then drop it: leaving it behind would
+    // keep phantom contracts driving the dealer's (real) hedging and consuming the
+    // open-interest limit, and it would never settle since the account is gone.
+    const pos = this.optionPositions.get(id);
+    const acct = this.agents.find((a) => a.id === id);
+    if (pos && acct) {
+      const spot = this.book.getLastTradePrice();
+      const tau = this.optionTau();
+      for (const [cid, qty] of pos) {
+        const c = this.optionChain.find((x) => x.id === cid);
+        if (!c || qty === 0) continue;
+        const mark = blackScholes(c.type, spot, c.strike, tau, this.optionImpliedVol, this.optionRate).price * CONTRACT_MULTIPLIER;
+        acct.cash += qty * mark;
+        this.optionsDealer.cash -= qty * mark;
+      }
+    }
+    this.optionPositions.delete(id);
     this.agents = this.agents.filter((a) => a.id !== id);
     this.pnlSpark.delete(id); // free its sparkline ring
   }
@@ -323,6 +340,10 @@ export class SimulationEngine {
   // ---------------- Options market (opt-in) ----------------
 
   enableOptions(on: boolean): void {
+    // Turning the market OFF must close it out: expiry and dealer hedging both stop, so
+    // leaving positions open would freeze the dealer's inventory in the float and settle
+    // long-stale contracts at whatever the price happens to be when it's switched on again.
+    if (!on && this.optionsEnabled) this.closeOutOptions();
     this.optionsEnabled = on;
     if (on && this.optionChain.length === 0) this.rollOptionChain();
     // A dealer desk trades against a real balance sheet; without one its hedging is
@@ -330,6 +351,37 @@ export class SimulationEngine {
     if (on && this.optionsDealer.startingCapital === 0) {
       this.optionsDealer.startingCapital = OPTION_DEALER_CAPITAL;
       this.optionsDealer.cash = OPTION_DEALER_CAPITAL;
+    }
+  }
+
+  /**
+   * Settle every open option at its current mark against the dealer, flatten the
+   * dealer's hedge inventory back into the book, and clear the chain.
+   */
+  private closeOutOptions(): void {
+    const spot = this.book.getLastTradePrice();
+    const tau = this.optionTau();
+    for (const [ownerId, pos] of this.optionPositions) {
+      const acct = this.accountOf(ownerId);
+      for (const [cid, qty] of pos) {
+        if (qty === 0 || !acct) continue;
+        const c = this.optionChain.find((x) => x.id === cid);
+        if (!c) continue;
+        const mark = blackScholes(c.type, spot, c.strike, tau, this.optionImpliedVol, this.optionRate).price * CONTRACT_MULTIPLIER;
+        acct.cash += qty * mark; // holder is bought out at the mark
+        this.optionsDealer.cash -= qty * mark;
+        if (ownerId === 'user') this.userOptionCashFlow += qty * mark;
+      }
+    }
+    this.optionPositions.clear();
+    this.optionChain = [];
+    // Return the dealer's hedge inventory to the market so it isn't stranded in the float.
+    if (Math.abs(this.optionsDealer.shares) >= MIN_ORDER) {
+      const side: Side = this.optionsDealer.shares > 0 ? 'sell' : 'buy';
+      const registry = this.buildRegistry();
+      for (const t of this.book.submitMarketOrder(side, Math.abs(this.optionsDealer.shares), 'optionsDealer', this.tick)) {
+        this.settle(t, registry);
+      }
     }
   }
 
@@ -443,9 +495,22 @@ export class SimulationEngine {
     if (q < 0) q = -Math.min(-q, held); // can't sell more than held (no naked short)
     if (q > 0) {
       const perContract = price * CONTRACT_MULTIPLIER;
-      const affordable = perContract > 0 ? Math.floor(acct.cash / perContract) : 0;
+      // Cash available after what resting stock orders already committed.
+      const freeCash = ownerId === 'user' ? Math.max(0, acct.cash - this.book.restingBuyNotional('user')) : acct.cash;
+      const affordable = perContract > 0 ? Math.floor(freeCash / perContract) : 0;
       q = Math.min(q, affordable);
-      if (q <= 0) { if (ownerId === 'user') this.lastOrderNote = 'Not enough cash for that option.'; return; }
+      // The market-wide open-interest cap applies to EVERY buyer, not just the agents —
+      // otherwise one click can write more contracts than the dealer can hedge.
+      const oiRoom = Math.floor(Math.max(0, (OPTION_MAX_OI_FRACTION * this.sharesOutstanding) / CONTRACT_MULTIPLIER - this.totalOpenInterest()));
+      const beforeCap = q;
+      q = Math.min(q, oiRoom);
+      if (q <= 0) {
+        if (ownerId === 'user') {
+          this.lastOrderNote = affordable <= 0 ? 'Not enough cash for that option.' : 'Open-interest limit reached — dealers can only write what they can hedge.';
+        }
+        return;
+      }
+      if (ownerId === 'user' && q < beforeCap) this.lastOrderNote = `Trimmed to ${q} contracts by the open-interest limit.`;
     }
     if (q === 0) return;
     const premium = q * price * CONTRACT_MULTIPLIER;
@@ -574,29 +639,48 @@ export class SimulationEngine {
     const requested = uo.size;
     // Stop order: rest it dormant; it fires as a market order once price crosses (below).
     if (uo.stopPrice != null) {
+      // A stop must sit on the FAR side of the market, or it would trigger instantly at
+      // the end of this very tick while the UI claims it is resting.
+      const wrongSide = uo.side === 'buy' ? uo.stopPrice <= px : uo.stopPrice >= px;
+      if (wrongSide) {
+        this.lastOrderNote = `A ${uo.side}-stop must be ${uo.side === 'buy' ? 'above' : 'below'} the current price ($${px.toFixed(2)}) — otherwise it fires immediately.`;
+        return [];
+      }
       this.book.submitStopOrder(uo.side, requested, uo.stopPrice, 'user');
       this.lastOrderNote = `${uo.side === 'buy' ? 'Buy' : 'Sell'}-stop resting — fires if price ${uo.side === 'buy' ? 'rises to' : 'falls to'} $${uo.stopPrice.toFixed(2)}.`;
       return [];
     }
+    // Reserve what the user's RESTING orders have already committed, so several orders
+    // can't each spend the same cash / sell the same shares.
+    const freeCash = Math.max(0, this.user.cash - this.book.restingBuyNotional('user'));
+    const freeShares = this.user.shares - this.book.restingSellSize('user');
     let size = requested;
     if (uo.side === 'sell') {
-      // Sell holdings, plus a cash-collateralized short if the user has enabled it.
-      const maxShort = this.userCanShort && px > 0 ? (SHORT_COLLATERAL * this.user.cash) / px : 0;
-      size = Math.min(size, Math.max(0, this.user.shares + maxShort));
+      // Sell uncommitted holdings, plus a cash-collateralized short if enabled.
+      const maxShort = this.userCanShort && px > 0 ? (SHORT_COLLATERAL * freeCash) / px : 0;
+      size = Math.min(size, Math.max(0, freeShares + maxShort));
       if (size < MIN_ORDER) {
-        this.lastOrderNote = this.user.shares < MIN_ORDER
-          ? (this.userCanShort ? 'No short capacity (need cash as collateral).' : 'You hold no shares — enable shorting to sell short.')
+        this.lastOrderNote = freeShares < MIN_ORDER
+          ? (this.userCanShort ? 'No short capacity (need cash as collateral).' : 'No uncommitted shares to sell — enable shorting to sell short.')
           : null;
         return [];
       }
-    } else {
-      // Cap to what cash can afford at the marginal price, including the taker fee.
-      const ref = uo.limitPrice ?? this.book.getBestAsk() ?? px; // best ask ≈ what a market buy pays
-      const perShare = ref * (1 + this.feeBps / 10000);
-      const affordable = perShare > 0 ? this.user.cash / perShare : 0;
-      size = Math.min(size, Math.max(0, affordable));
+    } else if (uo.limitPrice != null) {
+      // A limit buy rests at a known price, so cap it at that price (incl. the fee).
+      const perShare = uo.limitPrice * (1 + this.feeBps / 10000);
+      size = Math.min(size, perShare > 0 ? freeCash / perShare : 0);
       if (size < MIN_ORDER) {
-        this.lastOrderNote = 'Not enough cash to buy at the current price.';
+        this.lastOrderNote = 'Not enough uncommitted cash for that limit buy.';
+        return [];
+      }
+    } else {
+      // A market buy WALKS the ask ladder, paying more at each level — so size it against
+      // the actual ladder, not the best ask, or it overspends and overdraws the account.
+      size = Math.min(size, this.book.maxBuyableForCash(freeCash, this.feeBps, 'user'));
+      if (size < MIN_ORDER) {
+        this.lastOrderNote = this.book.getBestAsk() == null
+          ? 'No ask-side liquidity — nothing to trade against.'
+          : 'Not enough cash to buy at the current price.';
         return [];
       }
     }
@@ -838,8 +922,13 @@ export class SimulationEngine {
       for (const intent of intents) {
         let size = intent.size;
         if (intent.side === 'buy') {
-          const refPrice = intent.limitPrice ?? px * 1.05;
-          size = Math.min(size, refPrice > 0 ? availCash / refPrice : 0);
+          if (intent.limitPrice != null) {
+            size = Math.min(size, intent.limitPrice > 0 ? availCash / (intent.limitPrice * (1 + this.feeBps / 10000)) : 0);
+          } else {
+            // A market buy walks the ladder — size against the real book, not a flat
+            // 5% slippage guess, so it can't spend more cash than the agent has.
+            size = Math.min(size, this.book.maxBuyableForCash(availCash, this.feeBps, agent.id));
+          }
         } else {
           // Sell what's held, plus a collateral-limited short for bearish types.
           size = Math.min(size, Math.max(0, availShares + maxShort));
@@ -970,7 +1059,8 @@ export class SimulationEngine {
 
     // Sample each participant's PnL into its bounded sparkline ring (every few ticks).
     if (this.tick % SPARK_INTERVAL === 0) {
-      this.sampleSpark('user', this.user.cash + this.user.shares * px - this.user.startingCapital);
+      // Include option mark value so the user's sparkline matches the equity shown.
+      this.sampleSpark('user', this.user.cash + this.user.shares * px + (this.optionsEnabled ? this.userOptionValue : 0) - this.user.startingCapital);
       for (const a of this.agents) this.sampleSpark(a.id, a.cash + a.shares * px - a.startingCapital);
     }
 
