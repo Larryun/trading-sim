@@ -252,10 +252,23 @@ Each news event has **two effects**, mirroring how real information works:
   Over many events the fundamental follows a **random walk**, producing the lasting
   trends real stocks show (rather than always reverting to one fixed number).
 
-**Value/fundamental agents anchor to this evolving fundamental** (not a fixed
+**Value-style traders anchor to this evolving fundamental** (not a fixed
 price): when price sits below it they accumulate, pulling the market back toward
 fair value; above it they sell. So the market oscillates *around a moving
 fundamental* — overreacting on the way, then converging.
+
+**Mood is more than news — it's reflexive.** Between events, sentiment also feeds
+on *price action itself*: rallies breed optimism, drops breed fear (a bit
+sharper — the **fear asymmetry**). But because agents trade *with* the mood, that
+is a **positive feedback loop** (mood → buying → higher price → more optimism),
+and an unchecked loop would run away and **pin** the mood at its extreme forever.
+Real markets don't do that — euphoria *exhausts* buyers and panic *exhausts*
+sellers. The sim reproduces this with a **self-limiting reflexive gain**: the
+feedback fades to zero as the mood nears its cap, so the extreme is an unstable
+point the mood always falls back from (a **soft ceiling**, not a wall). Left
+alone, sentiment **mean-reverts to neutral** — and how *fast* it fades is the one
+thing the **Mood persistence** control sets, expressed as a **half-life in ticks**
+(a longer half-life = regimes that last longer, still perfectly stable).
 
 **In the app:** use "Good news" / "Bad news" to inject events manually, or toggle
 **Auto events** for random headlines. The sentiment chart shows the transient

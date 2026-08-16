@@ -77,11 +77,12 @@ export function TradingView() {
           <span style={{ width: 56, color: '#eee' }}>{sim.feeBps} bps</span>
         </label>
 
-        <label style={{ fontSize: 13, color: '#bbb', display: 'flex', alignItems: 'center', gap: 8 }} title="How long the mood lingers: sentiment shrinks by this fraction each tick. Higher = slower fade = regimes last longer.">
+        <label style={{ fontSize: 13, color: '#bbb', display: 'flex', alignItems: 'center', gap: 8 }} title="How long the mood lingers: its half-life in ticks. Higher = regimes last longer. Stable across the whole range — the loop can't run away.">
           Mood persistence
-          <input type="range" min={0.9} max={0.998} step={0.002} value={sim.sentimentDecay}
-            onChange={(e) => sim.setSentimentDecay(Number(e.target.value))} />
-          <span style={{ width: 78, color: '#eee' }}>~{Math.round(Math.log(0.5) / Math.log(sim.sentimentDecay))}t half-life</span>
+          <input type="range" min={8} max={40} step={1}
+            value={Math.round(Math.log(0.5) / Math.log(sim.sentimentDecay))}
+            onChange={(e) => sim.setSentimentDecay(Math.pow(0.5, 1 / Number(e.target.value)))} />
+          <span style={{ width: 78, color: '#eee' }}>{Math.round(Math.log(0.5) / Math.log(sim.sentimentDecay))}t half-life</span>
         </label>
 
         <span style={{ fontSize: 11, color: '#777' }} title="Average compute time of one simulation tick">
