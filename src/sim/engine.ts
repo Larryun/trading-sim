@@ -34,10 +34,10 @@ const NEWS_CLUSTER_BOOST = 5; // how much more likely follow-ups are inside a cl
 // The market mood drifts on a slow, PERSISTENT tide (a continuous bull/bear bias that
 // wanders slowly and lingers on one side for a long time) — long smooth regimes with
 // nuanced values, not a binary happy/sad square wave and not fast noise.
-const NEWS_REGIME_DECAY = 0.9995; // very slow mean reversion → long one-sided excursions (regimes last)
-const NEWS_REGIME_STEP = 0.02; // random-walk step of the tide (how far it swings)
-const NEWS_REGIME_BIAS = 0.45; // how strongly the tide tilts news direction (0..0.5)
-const NEWS_REGIME_LEVEL = 1.5; // how much the tide biases sentiment (moderate → lasting but not binary)
+const MOOD_TIDE_DECAY = 0.9995; // very slow mean reversion → long one-sided excursions (regimes last)
+const MOOD_TIDE_STEP = 0.02; // random-walk step of the tide (how far it swings)
+const NEWS_DIRECTION_BIAS = 0.45; // how strongly the tide tilts news direction (0..0.5)
+const MOOD_TIDE_LEVEL = 1.5; // how much the tide biases sentiment (moderate → lasting but not binary)
 // A news event's fundamental repricing DIFFUSES in over time rather than jumping,
 // so the market shows realistic post-news drift as the information propagates.
 const FUNDAMENTAL_DIFFUSION = 0.06;
@@ -57,9 +57,14 @@ const VALUATION_MULTIPLE = 20; // price/earnings multiple applied to EPS to get 
 // from real open interest rather than a slider.
 const TICKS_PER_YEAR = 800; // 4 quarters × 200 ticks — for Black-Scholes time-to-expiry
 const CONTRACT_MULTIPLIER = 100; // shares per contract (like real US options)
-const OPTION_LIFETIME = 400; // ticks until a freshly-issued chain expires (~2 quarters)
+const OPTION_LIFETIME = 100; // ticks until a freshly-issued chain expires (~a month, like real listed options)
 const OPTION_STRIKE_OFFSETS = [-0.1, -0.05, 0, 0.05, 0.1]; // strikes as fractions around spot
 const OPTION_HEDGE_RATE = 0.2; // fraction of the delta gap the dealer hedges per tick (gradual)
+const OPTION_DEALER_CAPITAL = 2000000; // the dealer desk's balance sheet — its hedging is bounded by this
+const OPTION_IV_PREMIUM = 1.25; // implied vol runs a bit above realized (the variance risk premium)
+const OPTION_IV_MIN = 0.15; // floor / cap on implied vol (annualized)
+const OPTION_IV_MAX = 1.2;
+const OPTION_DEALER_POS_LIMIT = 0.2; // dealer hedge inventory capped to this × shares outstanding
 
 // Short selling: bearish "view" traders can borrow & sell (shares go negative),
 // collateralized by their cash. If a rising price wipes out that collateral they
@@ -140,12 +145,15 @@ export class SimulationEngine {
     return this.eps * this.valuationMultiple;
   }
   private newsClusterTicks = 0; // ticks remaining in the current news cluster
-  private newsRegime = 0; // slow continuous bull/bear tide in ~[-1,1] (persistent, not binary)
+  private moodTide = 0; // slow continuous bull/bear tide in ~[-1,1] (persistent, not binary)
   // Tuned low so news (via earnings expectations) stays within reach of the long-only
   // agent pool in BOTH directions (they can't short to chase a crashed fair).
   fundamentalImpact = 0.003; // tiny: news barely moves EPS (earnings reports are the real fair-value driver)
   events: NewsEvent[] = [];
-  autoNews = false;
+  // On by default: a real market always has information arriving. Turning it OFF is a
+  // deliberate "quiet market" scenario, where only earnings reports and the slow mood
+  // tide move sentiment (both of which run regardless of this flag).
+  autoNews = true;
   private nextEventId = 1;
 
   // Dividends: a realistic ANNUAL yield, paid QUARTERLY (every EARNINGS_PERIOD ticks)
@@ -170,7 +178,11 @@ export class SimulationEngine {
   // the sum of ALL of these, so agent (speculator) open interest counts too.
   optionPositions = new Map<string, Map<number, number>>();
   optionExpiryTick = 0;
-  optionImpliedVol = 0.5; // annualized vol used to price the chain
+  // Implied vol is DERIVED from recent realized volatility (plus a variance risk
+  // premium), refreshed each tick — not a fixed guess. A hardcoded IV far above
+  // realized vol would make every option wildly overpriced, bleeding buyers dry and
+  // handing the dealer an ever-growing cash pile (and thus unlimited hedging power).
+  optionImpliedVol = 0.2; // annualized vol used to price the chain
   userOptionCashFlow = 0; // cumulative user cash from options (−premium paid, +premium/payout received)
   private nextContractId = 1;
   optionsDealer: AgentAccount = { startingCapital: 0, cash: 0, shares: 0, avgCost: 0, realizedPnl: 0, tradeCount: 0 };
@@ -195,7 +207,7 @@ export class SimulationEngine {
    */
   get sentimentBreakdown(): { tide: number; news: number; reflex: number; total: number } {
     return {
-      tide: NEWS_REGIME_LEVEL * this.newsRegime,
+      tide: MOOD_TIDE_LEVEL * this.moodTide,
       news: this.newsMood,
       reflex: this.reflexMood,
       total: this.sentiment,
@@ -295,10 +307,39 @@ export class SimulationEngine {
   enableOptions(on: boolean): void {
     this.optionsEnabled = on;
     if (on && this.optionChain.length === 0) this.rollOptionChain();
+    // A dealer desk trades against a real balance sheet; without one its hedging is
+    // unconstrained and it can push the price around without limit.
+    if (on && this.optionsDealer.startingCapital === 0) {
+      this.optionsDealer.startingCapital = OPTION_DEALER_CAPITAL;
+      this.optionsDealer.cash = OPTION_DEALER_CAPITAL;
+    }
   }
 
   private optionTau(): number {
     return Math.max(1e-4, (this.optionExpiryTick - this.tick) / TICKS_PER_YEAR);
+  }
+
+  /**
+   * Realized volatility, annualized — the basis for implied vol. Measured from
+   * MULTI-TICK (20-tick) returns over a window comparable to the option's life, not
+   * from tick-to-tick returns: this price series trends (fundamental drift + momentum),
+   * so 1-tick vol scaled by √t badly understates the dispersion actually realized over
+   * an option's tenor — which would price every option far too cheap.
+   */
+  private realizedAnnualVol(): number {
+    const STEP = 20;
+    const w = this.priceRing.window(STEP * 16 + 1).data;
+    if (w.length < STEP * 3) return OPTION_IV_MIN;
+    const rets: number[] = [];
+    for (let i = STEP; i < w.length; i += STEP) if (w[i - STEP] > 0) rets.push((w[i] - w[i - STEP]) / w[i - STEP]);
+    if (rets.length < 3) return OPTION_IV_MIN;
+    // RMS of returns, NOT the variance around their mean: Black-Scholes prices a
+    // driftless walk, so if we ignored the drift a steadily trending market would look
+    // "low vol" and its options would be given away — free money for directional buyers.
+    // Using RMS charges for the total movement actually realized.
+    const rms = Math.sqrt(rets.reduce((a, b) => a + b * b, 0) / rets.length);
+    const annual = rms * Math.sqrt(TICKS_PER_YEAR / STEP) * OPTION_IV_PREMIUM;
+    return Math.max(OPTION_IV_MIN, Math.min(OPTION_IV_MAX, annual));
   }
 
   private accountOf(ownerId: string): AgentAccount | undefined {
@@ -392,6 +433,22 @@ export class SimulationEngine {
     return this.userOptionCashFlow + this.userOptionValue;
   }
 
+  /**
+   * The options dealer's live state. The dealer isn't an agent you add — it's the
+   * built-in counterparty that writes every option the public buys and then
+   * delta-hedges that exposure in the stock (the source of gamma-driven flow).
+   */
+  get optionsDealerState(): { shares: number; cash: number; pnl: number; hedgeTarget: number; impliedVol: number } {
+    const px = this.currentPrice;
+    return {
+      shares: this.optionsDealer.shares,
+      cash: this.optionsDealer.cash,
+      pnl: this.optionsDealer.cash + this.optionsDealer.shares * px - this.optionsDealer.startingCapital,
+      hedgeTarget: this.optionsEnabled ? this.optionHedgeTarget() : 0,
+      impliedVol: this.optionImpliedVol,
+    };
+  }
+
   /** Shares the dealer must hold to be delta-neutral = +(all holders' option delta). */
   private optionHedgeTarget(): number {
     const spot = this.book.getLastTradePrice();
@@ -404,7 +461,10 @@ export class SimulationEngine {
         if (qty !== 0) delta += qty * (deltaByContract.get(cid) ?? 0) * CONTRACT_MULTIPLIER;
       }
     }
-    return delta;
+    // Risk/position limit: a desk won't run a hedge book that dwarfs the float (an
+    // unlimited one can walk the price wherever its delta points).
+    const limit = OPTION_DEALER_POS_LIMIT * this.sharesOutstanding;
+    return Math.max(-limit, Math.min(limit, delta));
   }
 
   /** Speculators (agents) buy calls/puts by regime — builds the OI the dealer hedges. */
@@ -431,7 +491,10 @@ export class SimulationEngine {
       if (!pick) continue;
       const price = blackScholes(pick.type, spot, pick.strike, this.optionTau(), this.optionImpliedVol).price;
       const perContract = price * CONTRACT_MULTIPLIER;
-      const qty = perContract > 0 ? Math.floor((a.budgetFrac * a.cash) / perContract) : 0;
+      // Budget off its MANDATE (starting capital), not its current pile: otherwise a
+      // winning streak compounds into ever-larger bets that swamp the whole market.
+      const budget = a.budgetFrac * Math.min(a.cash, a.startingCapital);
+      const qty = perContract > 0 ? Math.floor(budget / perContract) : 0;
       if (qty >= 1) this.tradeOption(pick.id, qty, a.id);
     }
   }
@@ -636,7 +699,7 @@ export class SimulationEngine {
     // The slow mood tide wanders continuously and lingers on one side for a long time
     // (a persistent AR(1)), giving lasting-but-nuanced bull/bear regimes rather than a
     // binary flip or fast noise. It also gently tilts news direction (below).
-    this.newsRegime = Math.max(-1.2, Math.min(1.2, this.newsRegime * NEWS_REGIME_DECAY + (Math.random() * 2 - 1) * NEWS_REGIME_STEP));
+    this.moodTide = Math.max(-1.2, Math.min(1.2, this.moodTide * MOOD_TIDE_DECAY + (Math.random() * 2 - 1) * MOOD_TIDE_STEP));
 
     // Auto-news arrives in lumpy bursts: a low base rate, boosted while a cluster
     // is active. Direction is tilted by the current regime, so good times keep
@@ -645,7 +708,7 @@ export class SimulationEngine {
       const prob = AUTO_NEWS_PROB * (this.newsClusterTicks > 0 ? NEWS_CLUSTER_BOOST : 1);
       if (Math.random() < prob) {
         const magnitude = 1 + Math.random() * 1.5; // 1.0 .. 2.5
-        const goodProb = 0.5 + NEWS_REGIME_BIAS * this.newsRegime;
+        const goodProb = 0.5 + NEWS_DIRECTION_BIAS * this.moodTide;
         this.triggerEvent(Math.random() < goodProb ? magnitude : -magnitude);
       }
     }
@@ -680,7 +743,7 @@ export class SimulationEngine {
     // Exposed mood = a slow REGIME baseline (the persistent bull/bear tide, so mood
     // stays one side for a whole period) + medium news shocks + fast reflex texture,
     // through a soft tanh ceiling (never a flat wall).
-    const regimeBaseline = NEWS_REGIME_LEVEL * this.newsRegime;
+    const regimeBaseline = MOOD_TIDE_LEVEL * this.moodTide;
     this.sentiment = SENTIMENT_CAP * Math.tanh((regimeBaseline + this.newsMood + this.reflexMood) / SENTIMENT_CAP);
     if (Math.abs(this.sentiment) < 0.001) this.sentiment = 0;
 
@@ -767,6 +830,10 @@ export class SimulationEngine {
       }
     }
 
+    // Re-mark implied vol off recent realized vol (annualized) so the chain is priced
+    // fairly rather than systematically rich or cheap.
+    if (this.optionsEnabled) this.optionImpliedVol = this.realizedAnnualVol();
+
     // Options speculators buy calls/puts by regime — building the open interest the
     // dealer then hedges (so gamma squeezes emerge from real option demand).
     this.runSpeculators();
@@ -780,8 +847,19 @@ export class SimulationEngine {
       // hedge gradually, and a full-delta rebalance every tick makes the gamma feedback
       // violent enough to crash the price. HEDGE_RATE spreads it over ~5 ticks.
       const delta = (this.optionHedgeTarget() - this.optionsDealer.shares) * OPTION_HEDGE_RATE;
-      if (Math.abs(delta) >= MIN_ORDER) {
-        for (const t of this.book.submitMarketOrder(delta > 0 ? 'buy' : 'sell', Math.abs(delta), 'optionsDealer', this.tick)) {
+      // Bound the hedge by the desk's balance sheet: buys by cash, sells by inventory
+      // plus a cash-collateralized short. Without this the dealer can move the price
+      // without limit and a put-heavy regime drives the market to zero.
+      const hp = this.book.getLastTradePrice();
+      let hedgeSize = Math.abs(delta);
+      if (delta > 0) {
+        hedgeSize = Math.min(hedgeSize, hp > 0 ? Math.max(0, this.optionsDealer.cash) / hp : 0);
+      } else {
+        const shortCap = hp > 0 ? (SHORT_COLLATERAL * Math.max(0, this.optionsDealer.cash)) / hp : 0;
+        hedgeSize = Math.min(hedgeSize, Math.max(0, this.optionsDealer.shares + shortCap));
+      }
+      if (hedgeSize >= MIN_ORDER) {
+        for (const t of this.book.submitMarketOrder(delta > 0 ? 'buy' : 'sell', hedgeSize, 'optionsDealer', this.tick)) {
           this.settle(t, registry);
           tickTrades.push(t);
         }

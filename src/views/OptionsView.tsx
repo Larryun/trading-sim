@@ -23,9 +23,12 @@ export function OptionsView() {
   return (
     <div style={pageWrap}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-        <p style={{ margin: 0, color: colors.muted, fontSize: 13 }}>
-          Trade calls and puts (cash-settled at expiry). The <b>dealer</b> takes the other side and
-          <b> delta-hedges in the stock</b> — so your buying creates real hedging flow (a gamma squeeze).
+        <p style={{ margin: 0, color: colors.muted, fontSize: 13, maxWidth: 780 }}>
+          Trade calls and puts (cash-settled at expiry). The <b>dealer</b> is a built-in counterparty
+          (not an agent you add): it <b>writes every option</b> bought here — by you and by the
+          speculator agents — and then <b>delta-hedges in the stock</b>, buying as its exposure rises
+          and selling as it falls. That hedging flow hits the same order book, which is how a
+          <b> gamma squeeze</b> (or pinning) emerges. Its position and P&amp;L are shown below.
         </p>
         <label style={{ marginLeft: 'auto', fontSize: 13, color: colors.muted, display: 'flex', alignItems: 'center', gap: 6 }}>
           <input type="checkbox" checked={sim.optionsEnabled} onChange={(e) => sim.enableOptions(e.target.checked)} />
@@ -42,7 +45,12 @@ export function OptionsView() {
             <Tile label="Ticks to expiry" value={sim.ticksToExpiry.toLocaleString()} />
             <Tile label="Open interest" value={sim.optionChain.reduce((s, c) => s + c.openInterest, 0).toLocaleString()} title="Total contracts held across all participants (yours + speculators) — what the dealer must hedge" />
             <Tile label="Your option P&L" value={fmtMoney(sim.optionPnl)} color={sim.optionPnl >= 0 ? colors.up : colors.down} />
-            <Tile label="Contract size" value="×100 shares" />
+            <Tile label="Implied vol" value={`${(sim.dealerState.impliedVol * 100).toFixed(0)}%`} title="Annualized vol used to price the chain — tracks recent realized volatility plus a risk premium" />
+            <Tile label="Dealer hedge" value={`${Math.round(sim.dealerState.shares).toLocaleString()} sh`}
+              color={sim.dealerState.shares >= 0 ? colors.up : colors.down}
+              title="The dealer's stock position, held to offset the options it has written. It buys/sells the underlying as this target moves — the source of gamma flow." />
+            <Tile label="Dealer P&L" value={fmtMoney(sim.dealerState.pnl)} color={sim.dealerState.pnl >= 0 ? colors.up : colors.down}
+              title="Premium collected minus hedging losses and expiry payouts. Delta-hedging a short-gamma book loses money on the hedges — the premium is what pays for it." />
             <label style={{ ...panel, padding: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
               <span style={{ fontSize: 11, color: colors.muted }}>Trade size (contracts)</span>
               <input type="number" min={1} value={qty} onChange={(e) => setQty(Math.max(1, Number(e.target.value)))}

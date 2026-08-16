@@ -28,6 +28,7 @@ interface Config {
   feeBps?: number;
   fundamentalImpact?: number;
   sentimentDecay?: number;
+  optionsEnabled?: boolean;
   seed?: SeedEntry[];
 }
 
@@ -70,6 +71,7 @@ function evaluate(cfg: Config) {
   if (cfg.feeBps != null) e.feeBps = cfg.feeBps;
   if (cfg.fundamentalImpact != null) e.fundamentalImpact = cfg.fundamentalImpact;
   if (cfg.sentimentDecay != null) e.sentimentDecay = cfg.sentimentDecay;
+  e.enableOptions(cfg.optionsEnabled ?? false);
 
   for (const s of cfg.seed ?? DEFAULT_SEED) {
     const a = e.addAgent(s.type, s.capital, s.style);

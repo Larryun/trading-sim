@@ -53,8 +53,10 @@ function createEngine(): SimulationEngine {
   engine.addAgent('panicSeller', 35000);
   engine.addAgent('panicSeller', 30000);
 
-  // Not seeded (situational, add from the dropdown): the synthetic-gamma options
-  // dealer, and the options speculator (which needs the options market enabled).
+  // Options are left OFF at open (enable them on the Options tab). The options layer
+  // is functional but currently destabilizes the market when it runs by default — the
+  // dealer's hedge flow is large relative to this float — so it's opt-in for now, along
+  // with the speculator agents that trade the chain.
   return engine;
 }
 
@@ -82,10 +84,11 @@ export function useSimulation() {
   const [floatBreakdown, setFloatBreakdown] = useState<FloatBreakdown>(() => floatOf(engineRef.current));
   const [sentiment, setSentiment] = useState(0);
   const [sentimentBreakdown, setSentimentBreakdown] = useState(() => engineRef.current.sentimentBreakdown);
-  const [optionsEnabled, setOptionsEnabledState] = useState(false);
+  const [optionsEnabled, setOptionsEnabledState] = useState(engineRef.current.optionsEnabled);
   const [optionChain, setOptionChain] = useState<ReturnType<SimulationEngine['getOptionChain']>>([]);
   const [optionPnl, setOptionPnl] = useState(0);
   const [ticksToExpiry, setTicksToExpiry] = useState(0);
+  const [dealerState, setDealerState] = useState(() => engineRef.current.optionsDealerState);
   const [fundamentalValue, setFundamentalValue] = useState(engineRef.current.fundamentalValue);
   const [eps, setEps] = useState(engineRef.current.eps);
   const valuationMultiple = engineRef.current.valuationMultiple;
@@ -93,7 +96,7 @@ export function useSimulation() {
   const [tick, setTick] = useState(0);
   const [totalDividendsPaid, setTotalDividendsPaid] = useState(0);
   const [totalFeesPaid, setTotalFeesPaid] = useState(0);
-  const [autoNews, setAutoNews] = useState(false);
+  const [autoNews, setAutoNews] = useState(engineRef.current.autoNews);
   const [lastUserFill, setLastUserFill] = useState<UserFill>(null);
   const [userOrders, setUserOrders] = useState<UserOrderRecord[]>([]);
   const [userRestingOrders, setUserRestingOrders] = useState(0);
@@ -164,6 +167,7 @@ export function useSimulation() {
       setOptionChain(engine.getOptionChain());
       setOptionPnl(engine.optionPnl);
       setTicksToExpiry(Math.max(0, engine.optionExpiryTick - engine.tick));
+      setDealerState(engine.optionsDealerState);
     }
     setFundamentalValue(engine.fundamentalValue);
     setEps(engine.eps);
@@ -315,6 +319,7 @@ export function useSimulation() {
     tradeOption,
     optionPnl,
     ticksToExpiry,
+    dealerState,
     autoNews,
     triggerEvent,
     toggleAutoNews,

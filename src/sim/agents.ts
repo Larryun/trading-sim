@@ -259,8 +259,13 @@ export function decideOrder(agent: Agent, market: MarketState): OrderIntent[] {
       const volBps = realizedVol(market.priceHistory, 20) * 10000;
       const effSpreadBps = Math.min(agent.maxSpreadBps, agent.spreadBps + agent.volSensitivity * volBps);
       const half = mid * (effSpreadBps / 10000);
+      // Inventory skew: quote lower when long / higher when short to unwind. The anchor
+      // is "about half of equity in stock" — note this makes a well-capitalized maker a
+      // large holder of the float. Targeting flat inventory instead is more faithful to
+      // a real maker, but it requires the maker to short to keep an ask up, which
+      // destabilized the market in testing — left as a known simplification.
       const equity = agent.cash + agent.shares * mid;
-      const targetShares = mid > 0 ? equity / 2 / mid : 0; // aim to hold ~half in stock
+      const targetShares = mid > 0 ? equity / 2 / mid : 0;
       const excess = targetShares > 0 ? (agent.shares - targetShares) / targetShares : 0;
       const skew = agent.inventorySkew * Math.max(-1, Math.min(1, excess)) * half;
       const center = mid - skew;
