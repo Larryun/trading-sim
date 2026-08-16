@@ -25,6 +25,12 @@ const MAX_TRADES = 500;
 const AUTO_NEWS_PROB = 0.008;
 const NEWS_CLUSTER_TICKS = 30; // window over which follow-up news is more likely
 const NEWS_CLUSTER_BOOST = 5; // how much more likely follow-ups are inside a cluster
+// The market sits in a sustained bull or bear REGIME that only occasionally flips —
+// this is what gives lasting mood periods (real bull/bear markets) instead of noise.
+const REGIME_SWITCH_PROB = 0.0025; // per-tick chance the bull/bear regime flips (~400-tick regimes)
+const REGIME_EASE = 0.02; // how fast the smoothed regime eases toward the current bull/bear state
+const NEWS_REGIME_BIAS = 0.45; // how strongly the regime tilts news direction (0..0.5)
+const NEWS_REGIME_LEVEL = 2.2; // how much the regime sets a persistent sentiment baseline (dominates fast noise)
 // A news event's fundamental repricing DIFFUSES in over time rather than jumping,
 // so the market shows realistic post-news drift as the information propagates.
 const FUNDAMENTAL_DIFFUSION = 0.06;
@@ -48,7 +54,7 @@ const MAINT_MARGIN = 0.25; // margin call when equity falls below this * short e
 // price action (reflexivity), wobbles randomly, spikes harder on the way down
 // (fear), and gets jumpier when already excited (volatility clustering).
 const SENTIMENT_REFLEX_WINDOW = 12; // ticks of price action the mood reads (longer = smoother)
-const SENTIMENT_MOOD_NOISE = 0.008; // small random wobble (kept low so mood isn't just noise)
+const SENTIMENT_MOOD_NOISE = 0.004; // small random wobble (kept low so the regime shows through, not noise)
 const SENTIMENT_FEAR_ASYMMETRY = 1.6; // downside moves move the FAST mood more than up
 const SENTIMENT_CAP = 3; // bound so the reflexive loop can't run away
 const REFLEX_MOOD_DECAY = 0.85; // fast component leaks quickly (~4-tick half-life) so it's texture, not regime
@@ -99,7 +105,7 @@ export class SimulationEngine {
   // Persistence of the NEWS regime = pure leak toward neutral, set by a HALF-LIFE
   // (ticks) so the knob is stable across its whole range: decay = 0.5^(1/H). Default 20.
   sentimentDecay = Math.pow(0.5, 1 / 20); // ≈ 0.966 (~20-tick half-life)
-  sentimentReflexivity = 2; // loop gain: how strongly the recent trend feeds the FAST mood
+  sentimentReflexivity = 1.5; // loop gain: how strongly the recent trend feeds the FAST mood (lower = regime shows through)
   fundamentalValue = STARTING_PRICE; // the "true" value; eases toward the target (post-news drift)
   // Fair value is derived from earnings: target = EPS × multiple. EPS starts so the
   // target equals the starting price; news and earnings reports move EPS, not the
@@ -111,9 +117,11 @@ export class SimulationEngine {
     return this.eps * this.valuationMultiple;
   }
   private newsClusterTicks = 0; // ticks remaining in the current news cluster
+  private marketRegime = 1; // discrete bull (+1) / bear (-1) state; flips only occasionally
+  private newsRegime = 0; // smoothed regime in [-1,1] (eases toward marketRegime) — the bull/bear tide
   // Tuned low so news (via earnings expectations) stays within reach of the long-only
   // agent pool in BOTH directions (they can't short to chase a crashed fair).
-  fundamentalImpact = 0.012; // fraction EPS moves per unit of news sentiment (guidance change)
+  fundamentalImpact = 0.003; // tiny: news barely moves EPS (earnings reports are the real fair-value driver)
   events: NewsEvent[] = [];
   autoNews = false;
   private nextEventId = 1;
@@ -166,9 +174,10 @@ export class SimulationEngine {
     };
     this.events.push(event);
     if (this.events.length > 100) this.events = this.events.slice(-100);
-    // The news sets a lasting REGIME (slow-decaying newsMood) and revises earnings
-    // expectations (guidance): EPS moves, so fair value = EPS × multiple re-derives
-    // and the price diffuses toward the new level over the next ~dozens of ticks.
+    // News drives SENTIMENT (mood / hype / expectations), which the market prices as a
+    // bounded premium over fair value — it does NOT move fundamentals. Fair value (EPS)
+    // is moved only by EARNINGS reports, so news can't make fair value run away. A tiny
+    // fundamental component keeps a nudge for manual events.
     this.newsMood += sentiment;
     this.eps = Math.max(0.01, this.eps * (1 + sentiment * this.fundamentalImpact));
     this.newsClusterTicks = NEWS_CLUSTER_TICKS; // news begets follow-up news
@@ -365,13 +374,21 @@ export class SimulationEngine {
       this.newsClusterTicks = NEWS_CLUSTER_TICKS;
     }
 
+    // The market sits in a bull/bear regime that only occasionally flips, then eases
+    // in — so the mood tide (and news direction) stays one side for a sustained period
+    // instead of flickering. This is what makes sentiment show lasting regimes.
+    if (Math.random() < REGIME_SWITCH_PROB) this.marketRegime = -this.marketRegime;
+    this.newsRegime += (this.marketRegime - this.newsRegime) * REGIME_EASE;
+
     // Auto-news arrives in lumpy bursts: a low base rate, boosted while a cluster
-    // is active. Events are fewer but bigger than a constant drizzle of micro-news.
+    // is active. Direction is tilted by the current regime, so good times keep
+    // bringing good news (and vice versa) rather than flipping randomly.
     if (this.autoNews) {
       const prob = AUTO_NEWS_PROB * (this.newsClusterTicks > 0 ? NEWS_CLUSTER_BOOST : 1);
       if (Math.random() < prob) {
         const magnitude = 1 + Math.random() * 1.5; // 1.0 .. 2.5
-        this.triggerEvent(Math.random() < 0.5 ? magnitude : -magnitude);
+        const goodProb = 0.5 + NEWS_REGIME_BIAS * this.newsRegime;
+        this.triggerEvent(Math.random() < goodProb ? magnitude : -magnitude);
       }
     }
     if (this.newsClusterTicks > 0) this.newsClusterTicks--;
@@ -402,8 +419,11 @@ export class SimulationEngine {
     this.reflexMood += (Math.random() * 2 - 1) * SENTIMENT_MOOD_NOISE * (1 + Math.abs(this.sentiment)) * headroom;
     this.newsMood *= this.sentimentDecay; // slow leak — the lasting regime, half-life from the slider
     this.reflexMood *= REFLEX_MOOD_DECAY; // fast leak — texture only
-    // Combine into the exposed mood with a soft ceiling (never a flat wall).
-    this.sentiment = SENTIMENT_CAP * Math.tanh((this.newsMood + this.reflexMood) / SENTIMENT_CAP);
+    // Exposed mood = a slow REGIME baseline (the persistent bull/bear tide, so mood
+    // stays one side for a whole period) + medium news shocks + fast reflex texture,
+    // through a soft tanh ceiling (never a flat wall).
+    const regimeBaseline = NEWS_REGIME_LEVEL * this.newsRegime;
+    this.sentiment = SENTIMENT_CAP * Math.tanh((regimeBaseline + this.newsMood + this.reflexMood) / SENTIMENT_CAP);
     if (Math.abs(this.sentiment) < 0.001) this.sentiment = 0;
 
     const priceWindow = this.priceRing.window(STRATEGY_WINDOW).data;

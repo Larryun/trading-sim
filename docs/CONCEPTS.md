@@ -267,39 +267,47 @@ opening price, then changes for concrete, *objective* reasons:
   amount plus a random **beat/miss surprise**. The surprise is the main driver of
   fair-value moves and also colors the mood (a beat is bullish); it's logged as a
   news event ("Earnings beat +1.8%").
-- **News = guidance.** A news event revises **earnings expectations** (EPS), so the
-  fair value re-derives — good news raises expected earnings, bad news cuts them.
+- **News = mostly sentiment** (hype, chatter, analyst opinion). A news event mainly
+  moves the **mood**, and only *barely* nudges earnings — so day-to-day news drives
+  the sentiment premium, while the **fundamentals** are set by actual earnings. This
+  keeps hype from making fair value run away.
 
 Because fair value is `EPS × multiple`, it isn't a number nudged by hand — it falls
 out of the fundamentals. (Real fair value is *also* genuinely subjective — analysts
 disagree — but it's grounded in these objective inputs; here we use one shared
 estimate for clarity.)
 
-Each news event then has **two effects**, mirroring how real information works:
-
-- A **transient sentiment** burst that **decays** over the following ticks — the
-  short-term *reaction/overreaction*: sentiment-driven traders lean into it and
-  momentum piles on, so price often overshoots.
-- A **change in EPS** (expected earnings), which permanently re-derives fair value
-  — the lasting, fundamental part of the move.
+So the two channels are cleanly separated: **earnings** move the **fundamental** fair
+value (permanent), while **news/sentiment** moves the **valuation premium** around it
+(a lasting regime that eventually mean-reverts).
 
 **Value-style traders anchor to this evolving fundamental** (not a fixed
 price): when price sits below it they accumulate, pulling the market back toward
 fair value; above it they sell. So the market oscillates *around a moving
 fundamental* — overreacting on the way, then converging.
 
-**Mood has two layers.** Sentiment is the sum of a **slow regime** and a **fast
-reaction**, which is what lets news have a *lasting* effect without the mood
-either evaporating instantly or drifting off on its own:
+**How sentiment moves price — a valuation premium.** Sentiment doesn't just tweak
+order flow; it re-rates what the market is *willing to pay*. The pool anchors to a
+**sentiment-adjusted fair value** — `fair × (1 + premium × sentiment)` — so a
+bullish mood makes the stock trade at a **premium** above earnings-fair (multiple
+expansion) and a bearish mood at a **discount**, bounded and mean-reverting as the
+mood fades. That's why the gap between price and the dashed fair line tracks the
+sentiment line.
 
-- The **news regime** is the persistent layer. A news event jumps it, and it then
-  **leaks slowly toward neutral** at a **half-life you set** (the *Mood
-  persistence* control, in ticks). Good news therefore stays bullish for a while —
-  a regime, not a blip — which, together with the permanent fundamental shift,
-  gives news a genuine lasting effect on the market.
-- The **fast reaction** is *reflexive* texture: rallies breed optimism, drops breed
-  fear (a bit sharper — the **fear asymmetry**), plus a little random wobble. It
-  decays in a few ticks, so it adds momentum flavor but never becomes the trend.
+**Mood has three layers**, so it behaves like a real market's mood rather than
+noise:
+
+- A slow **bull/bear regime** — the market sits in one regime that only occasionally
+  flips, giving **sustained** optimistic or fearful *periods* (hundreds of ticks),
+  not a coin flip. This is the lasting tide.
+- **News shocks** on top — each event bumps the mood, then leaks toward the regime
+  at a **half-life you set** (the *Mood persistence* control).
+- A fast **reflexive** layer — rallies breed optimism, drops breed fear (a bit
+  sharper: the **fear asymmetry**), plus a little wobble; it decays in a few ticks,
+  so it adds texture but never becomes the trend.
+
+News drives **sentiment** (mood/hype); the company's **earnings reports** drive fair
+value — so hype can't make the fundamentals run away.
 
 Because agents trade *with* the mood, reflexivity is a **positive feedback loop**
 (mood → buying → higher price → more optimism) that, unchecked, would run away and

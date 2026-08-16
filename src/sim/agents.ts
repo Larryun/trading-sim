@@ -82,11 +82,24 @@ export function agentStyleLabel(agent: Agent): string {
   return agent.type === 'trader' ? `${TRADER_STYLES[agent.style].label} trader` : AGENT_TYPE_LABELS[agent.type];
 }
 
+// How much sentiment expands/contracts the valuation the market is willing to pay:
+// bullish mood → traders anchor to a premium ABOVE earnings-fair (multiple expansion),
+// bearish → a discount. This is what makes sentiment actually move price (a persistent,
+// bounded premium around the earnings anchor) instead of being a decoupled squiggle.
+export const SENTIMENT_PREMIUM = 0.06; // per unit of sentiment (±3 cap → ±~18% premium)
+
+/** The price the market is willing to pay = earnings-fair, expanded/contracted by mood. */
+export function perceivedValue(market: MarketState): number {
+  return market.fundamentalValue * (1 + SENTIMENT_PREMIUM * market.sentiment);
+}
+
 /** Signals a trader blends, each normalized to ~[-1,1] (+ = bullish). */
 export function traderSignals(agent: { window: number }, market: MarketState, price: number): number[] {
   const clamp = (x: number) => Math.max(-1, Math.min(1, x));
-  const fair = market.fundamentalValue;
-  const value = clamp(fair > 0 ? ((fair - price) / fair) * 10 : 0); // cheap vs fair = bullish
+  // Value = cheap vs the SENTIMENT-ADJUSTED fair (multiple expansion), so a bullish
+  // regime makes the pool willing to pay a premium and price trades above earnings-fair.
+  const pv = perceivedValue(market);
+  const value = clamp(pv > 0 ? ((pv - price) / pv) * 10 : 0);
   const momentum = clamp(pctChange(market.priceHistory, agent.window) * 50);
   const ma = movingAverage(market.priceHistory, agent.window);
   const meanRev = clamp(ma > 0 ? (-(price - ma) / ma) * 10 : 0); // above MA = bearish
