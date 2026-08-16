@@ -131,7 +131,10 @@ export class SimulationEngine {
 
   // Dividends: a realistic ANNUAL yield, paid QUARTERLY (every EARNINGS_PERIOD ticks)
   // as yield/100 × price ÷ 4 per share — organic cash entering from outside the market.
-  dividendYieldPct = 2; // ~2%/yr, a typical broad-market yield
+  // A realistic yield is ~2%/yr, but the sim runs many "years" (1 yr = 4 quarters =
+  // 800 ticks) per minute at high speed, so cash accretes fast in wall-clock. Default
+  // to a gentle 1% (still adjustable up to 6%); set to 0 for a closed cash loop.
+  dividendYieldPct = 1;
   totalDividendsPaid = 0;
 
   // Transaction cost: the taker (aggressor) pays this fraction of notional on every
