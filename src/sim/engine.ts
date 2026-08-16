@@ -11,7 +11,7 @@ if (import.meta.hot) import.meta.hot.accept(() => window.location.reload());
 
 const STARTING_PRICE = 100;
 const MIN_ORDER = 0.01;
-const USER_STARTING_CASH = 10000;
+const USER_STARTING_CASH = 100000;
 
 // Must cover the largest chart window: MAX_DISPLAY_BARS (120) × max bar size (60
 // ticks) = 7200 samples. Sized above that so the 120-bar window fills and scrolls
