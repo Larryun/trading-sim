@@ -65,6 +65,7 @@ export function useSimulation() {
   const [user, setUser] = useState<AgentAccount>(() => ({ ...engineRef.current.user }));
   const [floatBreakdown, setFloatBreakdown] = useState<FloatBreakdown>(() => floatOf(engineRef.current));
   const [sentiment, setSentiment] = useState(0);
+  const [sentimentBreakdown, setSentimentBreakdown] = useState(() => engineRef.current.sentimentBreakdown);
   const [fundamentalValue, setFundamentalValue] = useState(engineRef.current.fundamentalValue);
   const [eps, setEps] = useState(engineRef.current.eps);
   const valuationMultiple = engineRef.current.valuationMultiple;
@@ -136,6 +137,7 @@ export function useSimulation() {
     setUser({ ...engine.user });
     setFloatBreakdown(floatOf(engine));
     setSentiment(engine.sentiment);
+    setSentimentBreakdown(engine.sentimentBreakdown);
     setFundamentalValue(engine.fundamentalValue);
     setEps(engine.eps);
     setLastUserFill(engine.lastUserFill);
@@ -257,6 +259,7 @@ export function useSimulation() {
     setChartType,
     trades,
     sentiment,
+    sentimentBreakdown,
     autoNews,
     triggerEvent,
     toggleAutoNews,

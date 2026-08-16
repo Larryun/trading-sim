@@ -11,6 +11,7 @@ import { SupplyBar } from '../components/SupplyBar';
 import { FloatOwnership } from '../components/FloatOwnership';
 import { UserOrderHistory } from '../components/UserOrderHistory';
 import { OrderBookPanel } from '../components/OrderBookPanel';
+import { SentimentBreakdown } from '../components/SentimentBreakdown';
 
 const toggleBtn = (active: boolean): React.CSSProperties => ({
   padding: '5px 12px',
@@ -165,6 +166,14 @@ export function TradingView() {
             triggerEvent={sim.triggerEvent}
             toggleAutoNews={sim.toggleAutoNews}
           />
+          <div style={{ borderTop: '1px solid #2a2a3a', marginTop: 10, paddingTop: 10 }}>
+            <SentimentBreakdown
+              breakdown={sim.sentimentBreakdown}
+              recentPrices={sim.recentPrices}
+              currentPrice={sim.currentPrice}
+              fundamentalValue={sim.fundamentalValue}
+            />
+          </div>
         </div>
         <div style={panel}>
           <TradeLog trades={sim.trades} agents={sim.agents} />

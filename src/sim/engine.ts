@@ -152,6 +152,20 @@ export class SimulationEngine {
     return this.book.getLastTradePrice();
   }
 
+  /**
+   * The exposed sentiment broken into its contributing layers (which sum, through a
+   * soft tanh, into `sentiment`) — for an explainable "why is the mood here" readout:
+   * a slow regime tide, medium-lived news shocks, and fast price-action reflex.
+   */
+  get sentimentBreakdown(): { tide: number; news: number; reflex: number; total: number } {
+    return {
+      tide: NEWS_REGIME_LEVEL * this.newsRegime,
+      news: this.newsMood,
+      reflex: this.reflexMood,
+      total: this.sentiment,
+    };
+  }
+
   get bestBid(): number | null {
     return this.book.getBestBid();
   }
