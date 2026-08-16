@@ -248,6 +248,12 @@ into existence.
 - **Market maker** — provides liquidity and earns the spread (section 4). *Emergent
   effect:* tighter spreads, smoother fills, and a general damping of volatility.
 
+- **Options speculator** — expresses a directional view through **options** instead of
+  stock: buys **calls** in bullish regimes, **puts** in bearish ones (long-only,
+  cash-limited), holding to expiry. *Emergent effect:* its **open interest** is what the
+  dealer must hedge, so a crowd of speculators makes **gamma squeezes/crashes emerge on
+  their own** — without you touching the chain. (Only active when the options market is on.)
+
 - **Options dealer** — doesn't bet on direction; it **delta-hedges** an options book,
   trading only to stay neutral (`Δhedge ≈ −gamma × Δprice`). When **short gamma** (the
   default) it must **buy as price rises and sell as it falls**, an accelerant — one of
@@ -258,9 +264,9 @@ into existence.
 
 > All of these are implemented and can be added, removed, and tuned live from the
 > Agents panel: **noise, market maker, FOMO herd, whale, panic seller, options
-> dealer**, and the **Trader** (with the Value / Trend / Contrarian / News /
-> Balanced / Adaptive styles). The **Agent Decisions** view explains what each one
-> would do right now and why.
+> dealer, options speculator**, and the **Trader** (with the Value / Trend /
+> Contrarian / News / Balanced / Adaptive styles). The **Agent Decisions** view
+> explains what each one would do right now and why.
 
 ---
 
