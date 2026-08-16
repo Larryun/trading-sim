@@ -14,8 +14,8 @@ const VERDICT_STYLE: Record<Verdict, { label: string; color: string }> = {
 export function AgentDecisionsView() {
   const sim = useSim();
   const market: MarketState = useMemo(
-    () => ({ priceHistory: sim.recentPrices, tick: sim.tick, sentiment: sim.sentiment, fundamentalValue: sim.fundamentalValue }),
-    [sim.recentPrices, sim.tick, sim.sentiment, sim.fundamentalValue],
+    () => ({ priceHistory: sim.recentPrices, tick: sim.tick, sentiment: sim.sentiment, fundamentalValue: sim.fundamentalValue, sharesOutstanding: sim.floatBreakdown.total }),
+    [sim.recentPrices, sim.tick, sim.sentiment, sim.fundamentalValue, sim.floatBreakdown.total],
   );
 
   // One representative per kind of trader to explain its live decision. Traders are

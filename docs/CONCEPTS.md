@@ -268,11 +268,15 @@ into existence.
 - **Market maker** — provides liquidity and earns the spread (section 4). *Emergent
   effect:* tighter spreads, smoother fills, and a general damping of volatility.
 
-- **Index / passive fund** — holds a large, largely **inert** block of stock and is
+- **Index / passive fund** — holds a large, largely **inert** block and is
   **price-inelastic**: it trades because money flowed into or out of the fund, not because
-  the stock is cheap, and only on a slow rebalancing schedule. *Emergent effect:* it owns
-  most of the float while contributing almost no order flow — which is what keeps market
-  makers from being the dominant *owners* of the stock, as in a real market.
+  the stock is cheap, and only on a slow rebalancing schedule. Crucially its mandate is a
+  **share of the float** (~28% between the two funds, in line with real passive ownership
+  of a big company), which drifts with net flows **in both directions** and is hard-bounded.
+  Expressing it as an absolute, ever-growing block instead would let it march toward owning
+  the entire company. *Emergent effect:* it owns a big, stable slice of the float while
+  contributing almost no order flow — which is what keeps market makers from being the
+  dominant *owners* of the stock, as in a real market.
 
 - **Options speculator** — expresses a directional view through **options** instead of
   stock: buys **calls** in bullish regimes, **puts** in bearish ones (long-only,

@@ -187,10 +187,14 @@ export interface IndexFundAgent extends AgentAccount {
   id: string;
   name: string;
   type: 'indexFund';
-  targetShares: number; // mandate size it holds
+  // Mandate expressed as a FRACTION OF THE FLOAT, not an absolute share count. A real
+  // passive complex holds a roughly stable percentage of a company; expressing it in
+  // absolute shares (and growing it) would let it march toward owning everything.
+  ownershipTarget: number; // current target share of the float, drifts with net fund flows
+  baseOwnership: number; // the weight it mean-reverts to (self-calibrated to what it holds)
+  flowVol: number; // how much net inflows/outflows move that share each rebalance
   rebalanceEvery: number; // ticks between adjustments (it is inert in between)
-  maxSliceFrac: number; // max fraction of the mandate traded per rebalance
-  inflowPerRebalance: number; // fractional growth of the mandate each rebalance (fund inflows)
+  maxSliceFrac: number; // max fraction of its holding traded per rebalance
   activity: number;
   takeProfit: number; // 0
   stopLoss: number; // 0
@@ -246,4 +250,5 @@ export interface MarketState {
   tick: number;
   sentiment: number; // current decaying market sentiment from recent news
   fundamentalValue: number; // the "true" value, permanently repriced by news
+  sharesOutstanding: number; // the float, so holders can size a position against it
 }

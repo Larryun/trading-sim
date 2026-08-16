@@ -685,7 +685,7 @@ export class SimulationEngine {
     if (!this.optionsEnabled || this.optionChain.length === 0) return;
     const spot = this.book.getLastTradePrice();
     const priceWindow = this.priceRing.window(STRATEGY_WINDOW).data;
-    const market: MarketState = { priceHistory: priceWindow, tick: this.tick, sentiment: this.sentiment, fundamentalValue: this.fundamentalValue };
+    const market: MarketState = { priceHistory: priceWindow, tick: this.tick, sentiment: this.sentiment, fundamentalValue: this.fundamentalValue, sharesOutstanding: this.sharesOutstanding };
     for (const a of this.agents) {
       if (a.type !== 'speculator') continue;
       if (Math.random() >= a.activity) continue;
@@ -997,7 +997,7 @@ export class SimulationEngine {
     if (Math.abs(this.sentiment) < 0.001) this.sentiment = 0;
 
     const priceWindow = this.priceRing.window(STRATEGY_WINDOW).data;
-    const market: MarketState = { priceHistory: priceWindow, tick: this.tick, sentiment: this.sentiment, fundamentalValue: this.fundamentalValue };
+    const market: MarketState = { priceHistory: priceWindow, tick: this.tick, sentiment: this.sentiment, fundamentalValue: this.fundamentalValue, sharesOutstanding: this.sharesOutstanding };
     const registry = this.buildRegistry();
     const tickTrades: Trade[] = [];
 

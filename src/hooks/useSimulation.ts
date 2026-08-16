@@ -35,10 +35,11 @@ function createEngine(): SimulationEngine {
   //   own quotes rather than intermediating, which decouples price from fundamentals.
   for (let i = 0; i < 6; i++) engine.addAgent('marketMaker', 400000);
 
-  // — Passive/index funds: they hold the bulk of the float and barely trade. This is what
-  //   keeps market makers a MINORITY of both ownership and flow, as in a real market —
-  //   without them, maker capital dwarfs the float and maker quotes end up setting price.
-  for (let i = 0; i < 2; i++) engine.addAgent('indexFund', 6000000);
+  // — Passive/index funds: they hold a large, near-inert slice of the float (~28% between
+  //   them, in line with real passive ownership of a big company) and barely trade. Their
+  //   block is what keeps market makers a MINORITY of ownership and flow, as in a real
+  //   market — without it maker capital dwarfs the float and maker quotes set the price.
+  for (let i = 0; i < 2; i++) engine.addAgent('indexFund', 1100000);
 
   // — Institutions: the most capital, the fewest names. The value cohort is what
   //   tethers price to the earnings-based fair value (the market's gravity).

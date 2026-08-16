@@ -47,7 +47,8 @@ const PARAM_HELP: Record<string, string> = {
   'Open interest': 'Size of the simulated options book — scales how many shares must be hedged per $1 move. Higher = a more violent squeeze (~2000-4000 is clearly visible; very high values can overwhelm the book).',
   Strike: 'The simulated call wall. Gamma is more negative ABOVE this price, so set it at or just below the current price to arm a squeeze on the next rally.',
   'Bias threshold': 'How strongly its signal must lean before it buys calls (bullish) or puts (bearish).',
-  Mandate: 'The share block this fund is meant to hold. It drifts toward this regardless of price.',
+  'Ownership target': 'Share of the whole float this fund aims to hold. Real passive vehicles own a stable-ish percentage of a company, so this is bounded rather than an ever-growing block.',
+  'Flow volatility': 'How much net fund inflows/outflows move that target each rebalance — both directions.',
   'Rebalance every': 'Ticks between adjustments — it is completely inert in between.',
   'Max slice': 'Largest fraction of its mandate traded in one rebalance.',
   'Budget (% cash)': 'Most of its cash it spends on option premium per trade.',
@@ -251,8 +252,10 @@ function AgentParams({ agent, onUpdate }: { agent: Agent; onUpdate: (patch: Reco
       )}
       {agent.type === 'indexFund' && (
         <>
-          <Slider label="Mandate" value={agent.targetShares} min={0} max={200000} step={1000}
-            onChange={(v) => onUpdate({ targetShares: v })} format={(v) => `${(v / 1000).toFixed(0)}k sh`} />
+          <Slider label="Ownership target" value={agent.ownershipTarget} min={0.02} max={0.35} step={0.01}
+            onChange={(v) => onUpdate({ ownershipTarget: v })} format={(v) => `${(v * 100).toFixed(0)}% of float`} />
+          <Slider label="Flow volatility" value={agent.flowVol} min={0} max={0.02} step={0.001}
+            onChange={(v) => onUpdate({ flowVol: v })} format={(v) => `${(v * 100).toFixed(1)}%/rebal`} />
           <Slider label="Rebalance every" value={agent.rebalanceEvery} min={10} max={400} step={10}
             onChange={(v) => onUpdate({ rebalanceEvery: v })} format={(v) => `${v} ticks`} />
           <Slider label="Max slice" value={agent.maxSliceFrac} min={0.005} max={0.1} step={0.005}

@@ -123,6 +123,12 @@ export const SIGNAL_NAMES = ['value', 'momentum', 'mean-rev', 'sentiment'];
 const MM_ANCHOR_PULL = 0.2;
 const MM_ANCHOR_WINDOW = 12;
 
+// Passive-fund ownership bounds. A real index complex holds a stable-ish slice of a given
+// company; flows move it around but never let it accumulate the entire float.
+const INDEX_MIN_OWNERSHIP = 0.02;
+const INDEX_MAX_OWNERSHIP = 0.45;
+const INDEX_FLOW_REVERSION = 0.05; // pull back toward the base each rebalance
+
 // Minimum meaningful order size (mirrors the engine's own floor).
 const MIN_ORDER = 0.01;
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
@@ -191,7 +197,7 @@ export function createAgent(
       // Mostly SHARES, barely any cash: a passive vehicle exists to hold the stock, not
       // to trade it. Its block is what gives the float a realistic owner.
       return {
-        id, name, type, targetShares: (capital * 0.95) / startingPrice, rebalanceEvery: 50, maxSliceFrac: 0.02, inflowPerRebalance: 0.004,
+        id, name, type, ownershipTarget: 0, baseOwnership: 0, flowVol: 0.004, rebalanceEvery: 50, maxSliceFrac: 0.02,
         activity: 1, takeProfit: 0, stopLoss: 0,
         ...account,
         ...(allCash ? {} : { cash: capital * 0.05, shares: (capital * 0.95) / startingPrice }),
@@ -418,12 +424,24 @@ export function decideOrder(agent: Agent, market: MarketState): OrderIntent[] {
       // its mandate regardless of valuation, in small slices. This is deliberately boring —
       // its purpose is to HOLD the float, not to trade it.
       if (market.tick % Math.max(1, agent.rebalanceEvery) !== 0) return [];
-      // Passive vehicles receive steady INFLOWS, so the mandate grows over time. This is a
-      // real and persistent source of buying — and it's what lets price follow a rising
-      // fair value, since otherwise the float is locked up and nobody can supply the buyers.
-      agent.targetShares *= 1 + agent.inflowPerRebalance;
-      const drift = agent.targetShares - agent.shares;
-      const size = Math.min(Math.abs(drift), agent.targetShares * agent.maxSliceFrac);
+      // SELF-CALIBRATE on the first rebalance: the weight it mean-reverts to is simply the
+      // slice of the float it was seeded holding. Hard-coding a target instead makes the
+      // fund dump (or hoover up) the difference the moment the sim starts — a huge,
+      // price-inelastic program that has nothing to do with fund flows.
+      if (agent.baseOwnership <= 0 && market.sharesOutstanding > 0) {
+        agent.baseOwnership = agent.shares / market.sharesOutstanding;
+        agent.ownershipTarget = agent.baseOwnership;
+      }
+      // Net fund flows then move that target share BOTH ways, mean-reverting toward the
+      // base weight and hard-bounded: money flows into and out of passive vehicles, it does
+      // not compound forever, and a fund's stake in any one company stays a bounded
+      // percentage rather than marching toward the entire float.
+      const flow = (Math.random() * 2 - 1) * agent.flowVol;
+      const pull = (agent.baseOwnership - agent.ownershipTarget) * INDEX_FLOW_REVERSION;
+      agent.ownershipTarget = Math.max(INDEX_MIN_OWNERSHIP, Math.min(INDEX_MAX_OWNERSHIP, agent.ownershipTarget + flow + pull));
+      const target = agent.ownershipTarget * market.sharesOutstanding;
+      const drift = target - agent.shares;
+      const size = Math.min(Math.abs(drift), Math.max(agent.shares, target) * agent.maxSliceFrac);
       if (size < MIN_ORDER) return [];
       return [{ side: drift > 0 ? 'buy' : 'sell', size }];
     }
@@ -585,20 +603,21 @@ export function explainDecision(agent: Agent, market: MarketState): DecisionExpl
       };
     }
     case 'indexFund': {
-      const drift = agent.targetShares - agent.shares;
+      const target = agent.ownershipTarget * market.sharesOutstanding;
+      const drift = target - agent.shares;
       const due = market.tick % Math.max(1, agent.rebalanceEvery) === 0;
       const v: Verdict = Math.abs(drift) < 0.01 ? 'hold' : drift > 0 ? 'buy' : 'sell';
       return {
         rule: 'Passive / index fund — holds a large block of stock and is price-INELASTIC: it trades because money flowed in or out of the fund, not because the stock is cheap or expensive. Inert between scheduled rebalances.',
         signals: [
           { label: 'Holds', value: agent.shares.toFixed(0), lean: 0 },
-          { label: 'Mandate', value: agent.targetShares.toFixed(0), lean: 0 },
+          { label: 'Target', value: `${(agent.ownershipTarget * 100).toFixed(1)}% of float`, lean: 0 },
           { label: 'Rebalance', value: due ? 'due now' : `every ${agent.rebalanceEvery}t`, lean: 0 },
         ],
         verdict: v,
         detail: v === 'hold'
           ? 'At its mandate — holding, contributing no order flow.'
-          : `${drift > 0 ? 'Accumulating toward' : 'Trimming toward'} its mandate in slices of up to ${(agent.maxSliceFrac * 100).toFixed(0)}%, ignoring price.`,
+          : `${drift > 0 ? 'Accumulating toward' : 'Trimming toward'} ${target.toFixed(0)} shares (${(agent.ownershipTarget * 100).toFixed(1)}% of the float) in slices of up to ${(agent.maxSliceFrac * 100).toFixed(0)}%, ignoring price.`,
       };
     }
     case 'speculator': {
