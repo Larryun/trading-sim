@@ -1,12 +1,8 @@
-import type { Agent, AgentAccount, AgentType, MarketState, OrderIntent, Side } from './types';
+import type { Agent, AgentAccount, AgentType, MarketState, OrderIntent, Side, TraderStyle } from './types';
 
 // Force a full reload on edits (the engine that calls these lives in a useRef
 // and won't pick up hot-swapped agent definitions otherwise).
 if (import.meta.hot) import.meta.hot.accept(() => window.location.reload());
-
-// Base share size for the strategy sizing formulas; capital constraints in the
-// engine cap this further, so it just sets the "eagerness" scale of an agent.
-const BASE_SIZE = 500;
 
 function pctChange(history: number[], window: number): number {
   if (history.length < 2) return 0;
@@ -39,32 +35,55 @@ function realizedVol(history: number[], window: number): number {
 
 export const AGENT_TYPE_LABELS: Record<AgentType, string> = {
   noise: 'Noise',
-  momentum: 'Momentum',
-  meanReversion: 'Mean-reversion',
-  news: 'News / informed',
   marketMaker: 'Market maker',
-  value: 'Value / fundamental',
   fomoHerd: 'FOMO herd',
   whale: 'Institution / whale',
   panicSeller: 'Panic seller',
-  adaptive: 'Adaptive / learner',
+  trader: 'Trader',
 };
 
 export const AGENT_TYPE_COLORS: Record<AgentType, string> = {
   noise: '#60a5fa',
-  momentum: '#f59e0b',
-  meanReversion: '#a78bfa',
-  news: '#34d399',
   marketMaker: '#2dd4bf',
-  value: '#22d3ee',
   fomoHerd: '#d946ef',
   whale: '#94a3b8',
   panicSeller: '#ef4444',
-  adaptive: '#fb7185',
+  trader: '#22d3ee',
 };
 
-/** Signals the adaptive agent blends, each normalized to ~[-1,1] (+ = bullish). */
-export function adaptiveSignals(agent: { window: number }, market: MarketState, price: number): number[] {
+/**
+ * Trader styles = a "personality": a signed weighting over the
+ * [value, momentum, meanReversion, sentiment] signals, plus a default learning
+ * rate. These replace the old distinct value / momentum / mean-reversion / news /
+ * adaptive archetypes — one configurable agent covering the whole spectrum.
+ *   value:      buys cheap vs fair, fades sentiment (the old value/fundamental)
+ *   trend:      chases momentum, mild sentiment tailwind (old momentum)
+ *   contrarian: fades extension from the mean (old mean-reversion)
+ *   news:       trades the mood/information (old news / informed)
+ *   balanced:   trusts all four signals equally, fixed
+ *   adaptive:   starts balanced but LEARNS which signals work (old adaptive/AI)
+ */
+export const TRADER_STYLES: Record<TraderStyle, { label: string; color: string; weights: number[]; learningRate: number }> = {
+  value: { label: 'Value', color: '#22d3ee', weights: [0.6, 0, 0.2, -0.2], learningRate: 0 },
+  trend: { label: 'Trend', color: '#f59e0b', weights: [0, 0.7, -0.1, 0.2], learningRate: 0 },
+  contrarian: { label: 'Contrarian', color: '#a78bfa', weights: [0.25, -0.15, 0.5, -0.1], learningRate: 0 },
+  news: { label: 'News', color: '#34d399', weights: [0.15, 0.15, 0, 0.7], learningRate: 0 },
+  balanced: { label: 'Balanced', color: '#818cf8', weights: [0.25, 0.25, 0.25, 0.25], learningRate: 0 },
+  adaptive: { label: 'Adaptive', color: '#fb7185', weights: [0.25, 0.25, 0.25, 0.25], learningRate: 0.5 },
+};
+
+/** Style-aware display color: traders color by style, everyone else by type. */
+export function agentColor(agent: Agent): string {
+  return agent.type === 'trader' ? TRADER_STYLES[agent.style].color : AGENT_TYPE_COLORS[agent.type];
+}
+
+/** Style-aware display label: "Value", "Trend"… for traders; the type label otherwise. */
+export function agentStyleLabel(agent: Agent): string {
+  return agent.type === 'trader' ? `${TRADER_STYLES[agent.style].label} trader` : AGENT_TYPE_LABELS[agent.type];
+}
+
+/** Signals a trader blends, each normalized to ~[-1,1] (+ = bullish). */
+export function traderSignals(agent: { window: number }, market: MarketState, price: number): number[] {
   const clamp = (x: number) => Math.max(-1, Math.min(1, x));
   const fair = market.fundamentalValue;
   const value = clamp(fair > 0 ? ((fair - price) / fair) * 10 : 0); // cheap vs fair = bullish
@@ -74,7 +93,7 @@ export function adaptiveSignals(agent: { window: number }, market: MarketState, 
   const sentiment = clamp(market.sentiment / 2);
   return [value, momentum, meanRev, sentiment];
 }
-export const ADAPTIVE_SIGNAL_NAMES = ['value', 'momentum', 'mean-rev', 'sentiment'];
+export const SIGNAL_NAMES = ['value', 'momentum', 'mean-rev', 'sentiment'];
 
 // Minimum meaningful order size (mirrors the engine's own floor).
 const MIN_ORDER = 0.01;
@@ -91,6 +110,7 @@ export function createAgent(
   startingPrice: number,
   id: string,
   name: string,
+  style: TraderStyle = 'balanced',
 ): Agent {
   const cash = capital / 2;
   const shares = capital / 2 / startingPrice;
@@ -107,23 +127,22 @@ export function createAgent(
     case 'noise':
       // Pure liquidity/noise: no profit-seeking exit (let it churn both ways).
       return { id, name, type, frequency: 0.35, maxSize: 14, takeProfit: 0, stopLoss: 0, ...account };
-    case 'momentum':
-      // Trend follower: let winners run (wide TP), cut losers.
-      return { id, name, type, window: 10, sensitivity: 5, activity: 0.6, takeProfit: 0.15, stopLoss: 0.06, ...account };
-    case 'meanReversion':
-      // Fades extremes: quick to take small gains, slow to cut.
-      return { id, name, type, window: 20, threshold: 0.01, strength: 5, activity: 0.5, takeProfit: 0.04, stopLoss: 0.10, ...account };
-    case 'news':
-      return { id, name, type, orderSize: 400, activity: 0.7, takeProfit: 0.06, stopLoss: 0.06, ...account };
+    case 'trader': {
+      // One configurable directional trader. Its `style` sets the signal weights
+      // (its personality); learningRate > 0 makes it adapt those weights over time.
+      const preset = TRADER_STYLES[style];
+      return {
+        id, name, type, style,
+        weights: [...preset.weights], learningRate: preset.learningRate,
+        conviction: 10, window: 10, activity: 0.6,
+        lastSignals: [], lastPrice: 0, smoothScore: 0, takeProfit: 0, stopLoss: 0, ...account,
+      };
+    }
     case 'marketMaker':
       // A maker manages inventory via quote skew, so the shared TP/SL exit is off.
       // Deep ladders + a volatility-adaptive spread so it widens (charging more) when
       // informed flow is pushing the price around, its defense against adverse selection.
       return { id, name, type, spreadBps: 12, volSensitivity: 0.8, maxSpreadBps: 100, quoteSize: 200, levels: 12, inventorySkew: 0.4, activity: 0.8, takeProfit: 0, stopLoss: 0, ...account };
-    case 'value':
-      // Strong, forceful fundamentalists so price is tightly tethered to fair value
-      // (the main long-only force correcting mispricing without shorting).
-      return { id, name, type, marginOfSafety: 0.015, conviction: 22, contrarianGain: 0.25, maxOrderShares: 3000, activity: 0.65, takeProfit: 0, stopLoss: 0, ...account };
     case 'fomoHerd':
       // Threshold lowered to match the (small) moves a deeply-liquid book produces,
       // so the crowd actually chases rallies instead of waiting for a rare spike.
@@ -139,12 +158,6 @@ export function createAgent(
       };
     case 'panicSeller':
       return { id, name, type, peakWindow: 15, panicThreshold: 0.06, capitulationDD: 0.15, baseDumpFrac: 0.4, sentPanic: 0.6, reentryFrac: 0.3, activity: 0.7, takeProfit: 0, stopLoss: 0, ...account };
-    case 'adaptive':
-      // Starts trusting all four signals equally, then learns which work.
-      return {
-        id, name, type, window: 10, conviction: 8, learningRate: 0.5, activity: 0.6, takeProfit: 0, stopLoss: 0,
-        weights: [0.25, 0.25, 0.25, 0.25], lastSignals: [], lastPrice: 0, smoothScore: 0, ...account,
-      };
   }
 }
 
@@ -176,28 +189,38 @@ export function decideOrder(agent: Agent, market: MarketState): OrderIntent[] {
       const size = Math.random() * agent.maxSize;
       return size > 0 ? [{ side, size }] : [];
     }
-    case 'momentum': {
-      const change = pctChange(market.priceHistory, agent.window);
-      if (Math.abs(change) <= 0.0001) return [];
-      const side: Side = change > 0 ? 'buy' : 'sell';
-      const size = agent.sensitivity * Math.abs(change) * BASE_SIZE;
-      return size > 0 ? [{ side, size }] : [];
-    }
-    case 'meanReversion': {
-      const ma = movingAverage(market.priceHistory, agent.window);
-      const deviation = ma > 0 ? (price - ma) / ma : 0;
-      if (Math.abs(deviation) <= agent.threshold) return [];
-      const side: Side = deviation > 0 ? 'sell' : 'buy'; // fade the move
-      const size = agent.strength * Math.abs(deviation) * BASE_SIZE;
-      return size > 0 ? [{ side, size }] : [];
-    }
-    case 'news': {
-      // Informed traders act on incoming information: buy on positive sentiment,
-      // sell on negative, sized by how strong the current sentiment is.
-      if (Math.abs(market.sentiment) <= 0.02) return [];
-      const side: Side = market.sentiment > 0 ? 'buy' : 'sell';
-      const size = agent.orderSize * Math.abs(market.sentiment);
-      return size > 0 ? [{ side, size }] : [];
+    case 'trader': {
+      const sig = traderSignals(agent, market, price);
+      // If it learns (learningRate > 0), nudge each weight toward whatever predicted
+      // the return since its last decision. Weights are SIGNED (a style can be short
+      // a signal), so use an additive gradient step + L1-normalize (not multiplicative
+      // Hedge, which only works for nonnegative weights).
+      if (agent.learningRate > 0 && agent.lastPrice > 0 && agent.lastSignals.length === 4) {
+        const r = (price - agent.lastPrice) / agent.lastPrice;
+        let l1 = 0;
+        for (let i = 0; i < 4; i++) {
+          agent.weights[i] += agent.learningRate * agent.lastSignals[i] * r * 20;
+          l1 += Math.abs(agent.weights[i]);
+        }
+        if (l1 > 0) for (let i = 0; i < 4; i++) agent.weights[i] /= l1; // keep total influence bounded
+      }
+      agent.lastSignals = sig;
+      agent.lastPrice = price;
+
+      const score = sig.reduce((s, v, i) => s + (agent.weights[i] ?? 0) * v, 0);
+      // Smooth the score so a noisy tick doesn't flip the target — trade the view, not the jitter.
+      agent.smoothScore = 0.85 * agent.smoothScore + 0.15 * score;
+
+      // Hold a TARGET exposure ∝ conviction × smoothed score (capped at ±100% of
+      // equity) and rebalance only when the position drifts meaningfully off it — so a
+      // stable view means little trading (no fee bleed), a flip means it reverses.
+      const equity = agent.cash + agent.shares * price;
+      const targetExposure = Math.max(-1, Math.min(1, agent.conviction * agent.smoothScore * 0.15));
+      const desired = price > 0 ? (targetExposure * equity) / price : 0;
+      const delta = desired - agent.shares;
+      const band = Math.max((equity * 0.1) / Math.max(price, 1), 1); // ~10%-of-equity deadband
+      if (Math.abs(delta) < band) return [];
+      return [{ side: delta > 0 ? 'buy' : 'sell', size: Math.abs(delta) }];
     }
     case 'marketMaker': {
       // Post a two-sided ladder of resting quotes stepping away from mid, skewed to
@@ -220,23 +243,6 @@ export function decideOrder(agent: Agent, market: MarketState): OrderIntent[] {
         intents.push({ side: 'sell', size: agent.quoteSize, limitPrice: center + half * level });
       }
       return intents;
-    }
-    case 'value': {
-      // Anchor to the evolving fundamental value (moved by news); buy when cheap,
-      // sell when dear, and fade sentiment. Ignore trend inside the dead band.
-      const fair = market.fundamentalValue;
-      const discount = (fair - price) / fair; // >0 = cheap vs fundamental
-      const s = Math.max(-1, Math.min(1, market.sentiment));
-      const eff = discount - agent.contrarianGain * s;
-      if (eff > agent.marginOfSafety) {
-        const size = Math.min(agent.maxOrderShares, agent.conviction * Math.abs(eff) * BASE_SIZE);
-        return size > 0 ? [{ side: 'buy', size }] : [];
-      }
-      if (eff < -agent.marginOfSafety) {
-        const size = Math.min(agent.maxOrderShares, agent.conviction * Math.abs(eff) * BASE_SIZE);
-        return size > 0 ? [{ side: 'sell', size }] : [];
-      }
-      return [];
     }
     case 'fomoHerd': {
       // Chase only accelerating up-moves; size up convexly the more extended the
@@ -301,39 +307,6 @@ export function decideOrder(agent: Agent, market: MarketState): OrderIntent[] {
       }
       return [];
     }
-    case 'adaptive': {
-      const sig = adaptiveSignals(agent, market, price);
-      // Learn: reward each signal that predicted the return since the last decision,
-      // and re-weight multiplicatively (Hedge / multiplicative-weights) toward winners.
-      if (agent.lastPrice > 0 && agent.lastSignals.length === 4) {
-        const r = (price - agent.lastPrice) / agent.lastPrice;
-        let sum = 0;
-        for (let i = 0; i < 4; i++) {
-          agent.weights[i] *= Math.exp(agent.learningRate * agent.lastSignals[i] * r * 20);
-          agent.weights[i] = Math.max(0.02, agent.weights[i]); // floor so a signal can recover
-          sum += agent.weights[i];
-        }
-        for (let i = 0; i < 4; i++) agent.weights[i] /= sum; // renormalize to sum 1
-      }
-      agent.lastSignals = sig;
-      agent.lastPrice = price;
-
-      const score = sig.reduce((s, v, i) => s + agent.weights[i] * v, 0);
-      // Smooth the score so a noisy tick doesn't flip the target — trade on the view,
-      // not the jitter.
-      agent.smoothScore = 0.85 * agent.smoothScore + 0.15 * score;
-
-      // Hold a TARGET exposure proportional to conviction × smoothed score (capped at
-      // ±100% of equity), and rebalance only when the position drifts meaningfully off
-      // it — so a stable view means little trading (no fee bleed), a flip means it reverses.
-      const equity = agent.cash + agent.shares * price;
-      const targetExposure = Math.max(-1, Math.min(1, agent.conviction * agent.smoothScore * 0.15));
-      const desired = price > 0 ? (targetExposure * equity) / price : 0;
-      const delta = desired - agent.shares;
-      const band = Math.max(equity * 0.1 / Math.max(price, 1), 1); // ~10%-of-equity deadband
-      if (Math.abs(delta) < band) return [];
-      return [{ side: delta > 0 ? 'buy' : 'sell', size: Math.abs(delta) }];
-    }
   }
 }
 
@@ -365,55 +338,30 @@ export function explainDecision(agent: Agent, market: MarketState): DecisionExpl
         verdict: 'hold',
         detail: `On each active tick it randomly buys or sells up to ${agent.maxSize} shares.`,
       };
-    case 'momentum': {
-      const ch = pctChange(market.priceHistory, agent.window);
-      const v: Verdict = Math.abs(ch) <= 0.0001 ? 'hold' : ch > 0 ? 'buy' : 'sell';
+    case 'trader': {
+      const sig = traderSignals(agent, market, price);
+      const score = sig.reduce((s, v, i) => s + (agent.weights[i] ?? 0) * v, 0);
+      const v: Verdict = Math.abs(score) <= 0.05 ? 'hold' : score > 0 ? 'buy' : 'sell';
+      const learns = agent.learningRate > 0;
+      // Color by this signal's CONTRIBUTION (weight × signal) — i.e. which way it pushes
+      // THIS trader — not the raw signal, so a fader (negative weight) reads correctly.
+      const signals: DecisionSignal[] = agent.weights.map((w, i) => {
+        const contrib = w * sig[i];
+        return {
+          label: `${SIGNAL_NAMES[i]} weight`,
+          value: `${w >= 0 ? '+' : ''}${(w * 100).toFixed(0)}%`,
+          lean: contrib > 0.005 ? 1 : contrib < -0.005 ? -1 : 0,
+        };
+      });
+      signals.push({ label: 'Blended score', value: score.toFixed(2), lean: score > 0 ? 1 : score < 0 ? -1 : 0 });
+      const styleName = TRADER_STYLES[agent.style].label;
       return {
-        rule: 'Chases the trend — buys when price is rising, sells when falling.',
-        signals: [{ label: `Trend (${agent.window}t)`, value: `${(ch * 100).toFixed(2)}%`, lean: ch > 0 ? 1 : ch < 0 ? -1 : 0 }],
+        rule: `${styleName} trader — holds a target exposure driven by a weighted blend of value, momentum, mean-reversion and sentiment${learns ? ', and LEARNS which signals to trust' : ''}.`,
+        signals,
         verdict: v,
-        detail: v === 'hold' ? 'Trend is flat — waits.' : `Recent trend is ${ch > 0 ? 'up' : 'down'} → ${v}; size grows with trend strength.`,
-      };
-    }
-    case 'meanReversion': {
-      const ma = movingAverage(market.priceHistory, agent.window);
-      const dev = ma > 0 ? (price - ma) / ma : 0;
-      const v: Verdict = Math.abs(dev) <= agent.threshold ? 'hold' : dev > 0 ? 'sell' : 'buy';
-      return {
-        rule: 'Fades deviations from its moving average — bets price snaps back.',
-        signals: [
-          { label: `MA(${agent.window})`, value: `$${ma.toFixed(2)}`, lean: 0 },
-          { label: 'Deviation', value: `${(dev * 100).toFixed(2)}%`, lean: dev > 0 ? -1 : dev < 0 ? 1 : 0 },
-        ],
-        verdict: v,
-        detail: v === 'hold' ? `Within ±${(agent.threshold * 100).toFixed(1)}% of the average — no trade.` : `Price is ${dev > 0 ? 'above' : 'below'} its average → fade it (${v}).`,
-      };
-    }
-    case 'news': {
-      const s = market.sentiment;
-      const v: Verdict = Math.abs(s) <= 0.02 ? 'hold' : s > 0 ? 'buy' : 'sell';
-      return {
-        rule: 'Trades on information — follows market sentiment.',
-        signals: [{ label: 'Sentiment', value: s.toFixed(2), lean: s > 0 ? 1 : s < 0 ? -1 : 0 }],
-        verdict: v,
-        detail: v === 'hold' ? 'Mood is neutral — sits out.' : `Sentiment is ${s > 0 ? 'positive' : 'negative'} → ${v}; size grows with |sentiment|.`,
-      };
-    }
-    case 'value': {
-      const fair = market.fundamentalValue;
-      const disc = fair > 0 ? (fair - price) / fair : 0;
-      const s = Math.max(-1, Math.min(1, market.sentiment));
-      const eff = disc - agent.contrarianGain * s;
-      const v: Verdict = eff > agent.marginOfSafety ? 'buy' : eff < -agent.marginOfSafety ? 'sell' : 'hold';
-      return {
-        rule: 'Buys below fair value, sells above — and fades panic (contrarian).',
-        signals: [
-          { label: 'Fair value', value: `$${fair.toFixed(2)}`, lean: 0 },
-          { label: 'Discount', value: `${(disc * 100).toFixed(1)}%`, lean: disc > 0 ? 1 : disc < 0 ? -1 : 0 },
-          { label: 'After contrarian', value: `${(eff * 100).toFixed(1)}%`, lean: eff > 0 ? 1 : eff < 0 ? -1 : 0 },
-        ],
-        verdict: v,
-        detail: v === 'hold' ? `Within its ${(agent.marginOfSafety * 100).toFixed(1)}% margin of safety — waits.` : `${eff > 0 ? 'Cheap' : 'Expensive'} vs fair beyond its margin → ${v}.`,
+        detail: v === 'hold'
+          ? 'Blended score is near zero — near its target exposure, so it waits.'
+          : `Weighted score → ${v}; it rebalances toward the exposure this view implies.${learns ? ' Weights adapt each tick toward whatever has been predicting returns.' : ''}`,
       };
     }
     case 'fomoHerd': {
@@ -483,23 +431,6 @@ export function explainDecision(agent: Agent, market: MarketState): DecisionExpl
         ],
         verdict: 'quote',
         detail: `Posts ${agent.levels} levels × ${agent.quoteSize} sh each side around $${price.toFixed(2)}, skewing to unwind inventory.`,
-      };
-    }
-    case 'adaptive': {
-      const sig = adaptiveSignals(agent, market, price);
-      const score = sig.reduce((s, v, i) => s + (agent.weights[i] ?? 0.25) * v, 0);
-      const v: Verdict = Math.abs(score) <= 0.05 ? 'hold' : score > 0 ? 'buy' : 'sell';
-      const signals: DecisionSignal[] = agent.weights.map((w, i) => ({
-        label: `${ADAPTIVE_SIGNAL_NAMES[i]} weight`,
-        value: `${(w * 100).toFixed(0)}%`,
-        lean: sig[i] > 0.02 ? 1 : sig[i] < -0.02 ? -1 : 0,
-      }));
-      signals.push({ label: 'Blended score', value: score.toFixed(2), lean: score > 0 ? 1 : score < 0 ? -1 : 0 });
-      return {
-        rule: 'Blends value/momentum/mean-reversion/sentiment and LEARNS which to trust — up-weighting whichever has been predicting returns.',
-        signals,
-        verdict: v,
-        detail: v === 'hold' ? 'Blended score is below its trade threshold — waits.' : `Weighted score → ${v}. The weights adapt each tick, so it favors trend in trending regimes and value/mean-reversion in choppy ones.`,
       };
     }
   }

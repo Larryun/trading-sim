@@ -2,11 +2,13 @@ import { useMemo } from 'react';
 import { useSim } from '../SimContext';
 import { panel, pageWrap } from '../ui';
 import { useContainerWidth } from '../components/useContainerWidth';
-import { AGENT_TYPE_COLORS, AGENT_TYPE_LABELS } from '../sim/agents';
-import type { AgentType } from '../sim/types';
+import { agentColor, agentStyleLabel } from '../sim/agents';
+import type { Agent } from '../sim/types';
 
 interface Row {
-  type: AgentType;
+  key: string;
+  label: string;
+  color: string;
   count: number;
   shares: number;
   equity: number;
@@ -16,14 +18,20 @@ interface Row {
   trades: number;
 }
 
+// Group key: traders split by style (each personality is its own strategy row).
+function rowKey(a: Agent): string {
+  return a.type === 'trader' ? `trader:${a.style}` : a.type;
+}
+
 export function StatsView() {
   const sim = useSim();
   const { agents, currentPrice, fundamentalValue, floatBreakdown, bestBid, bestAsk, tick, totalDividendsPaid, totalFeesPaid, user, stepMs } = sim;
 
   const rows = useMemo(() => {
-    const m = new Map<AgentType, Row>();
+    const m = new Map<string, Row>();
     for (const a of agents) {
-      const r = m.get(a.type) ?? { type: a.type, count: 0, shares: 0, equity: 0, start: 0, realized: 0, unrealized: 0, trades: 0 };
+      const key = rowKey(a);
+      const r = m.get(key) ?? { key, label: agentStyleLabel(a), color: agentColor(a), count: 0, shares: 0, equity: 0, start: 0, realized: 0, unrealized: 0, trades: 0 };
       r.count++;
       r.shares += a.shares;
       r.equity += a.cash + a.shares * currentPrice;
@@ -31,7 +39,7 @@ export function StatsView() {
       r.realized += a.realizedPnl;
       r.unrealized += a.shares * (currentPrice - a.avgCost);
       r.trades += a.tradeCount;
-      m.set(a.type, r);
+      m.set(key, r);
     }
     return [...m.values()].sort((x, y) => (y.equity - y.start) - (x.equity - x.start));
   }, [agents, currentPrice]);
@@ -41,7 +49,7 @@ export function StatsView() {
   const gapPct = fundamentalValue > 0 ? ((currentPrice - fundamentalValue) / fundamentalValue) * 100 : 0;
   const userEquity = user.cash + user.shares * currentPrice;
 
-  const pnlData = rows.map((r) => ({ label: AGENT_TYPE_LABELS[r.type], pnl: Number((r.equity - r.start).toFixed(0)), color: AGENT_TYPE_COLORS[r.type] }));
+  const pnlData = rows.map((r) => ({ label: r.label, pnl: Number((r.equity - r.start).toFixed(0)), color: r.color }));
 
   return (
     <div style={pageWrap}>
@@ -83,7 +91,7 @@ export function StatsView() {
         <h3 style={{ margin: '0 0 10px', fontSize: 15 }}>Who owns the float?</h3>
         <OwnershipBar
           segments={[
-            ...rows.map((r) => ({ label: AGENT_TYPE_LABELS[r.type], shares: r.shares, color: AGENT_TYPE_COLORS[r.type] })),
+            ...rows.map((r) => ({ label: r.label, shares: r.shares, color: r.color })),
             { label: 'You', shares: user.shares, color: '#a78bfa' },
           ]}
           total={floatBreakdown.total}
@@ -105,8 +113,8 @@ export function StatsView() {
                 const pnl = r.equity - r.start;
                 const ret = r.start > 0 ? (r.equity / r.start - 1) * 100 : 0;
                 return (
-                  <tr key={r.type} style={{ borderTop: '1px solid #2a2a3a' }}>
-                    <Td align="left"><span style={{ color: AGENT_TYPE_COLORS[r.type], fontWeight: 600 }}>{AGENT_TYPE_LABELS[r.type]}</span></Td>
+                  <tr key={r.key} style={{ borderTop: '1px solid #2a2a3a' }}>
+                    <Td align="left"><span style={{ color: r.color, fontWeight: 600 }}>{r.label}</span></Td>
                     <Td>{r.count}</Td>
                     <Td>{Math.round(r.shares).toLocaleString()}</Td>
                     <Td>{floatBreakdown.total > 0 ? ((r.shares / floatBreakdown.total) * 100).toFixed(1) : '0'}%</Td>

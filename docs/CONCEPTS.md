@@ -183,34 +183,33 @@ can add, remove, and tune each type. Agents start with capital split roughly
 half in cash and half in shares, so they can trade either direction immediately.
 
 - **Noise traders** — buy or sell essentially at random, with an adjustable
-  frequency and directional lean (`bias`). *Emergent effect:* random-walk jitter
-  with no persistent trend. They are the market's background hum and provide the
-  volume that other strategies feed on.
+  frequency and order size. *Emergent effect:* random-walk jitter with no
+  persistent trend. They are the market's background hum and provide the volume
+  that other strategies feed on.
 
-- **Momentum / trend-followers** — measure the recent price change over a
-  lookback window and trade *with* it: buy when it's rising, sell when it's
-  falling, sizing up as the move accelerates. *Emergent effect:* **positive
-  feedback** — buying begets more buying. This is the engine of **trends and
-  bubbles** (and, in reverse, crashes).
+- **Trader (one configurable agent, many *styles*)** — real markets aren't made
+  of a handful of rigid archetypes; they're a spectrum of people weighing the
+  same information differently. So the directional strategies are unified into a
+  **single trader** that holds a **target exposure** driven by a **weighted blend
+  of four signals**: `value` (cheap vs. fair value), `momentum` (recent trend),
+  `mean-reversion` (distance from a moving average), and `sentiment`. Its
+  **style** is just a preset of those (signed) weights — its *personality*:
 
-- **Mean-reversion traders** — compare price to a moving average and **fade**
-  deviations: sell when price runs above its average, buy when it dips below,
-  once the gap exceeds a threshold. *Emergent effect:* **negative feedback** —
-  they lean against extremes, damping swings and pulling price back toward its
-  recent center. A force for **stability**.
+  | Style | Leans on | Behaves like |
+  |---|---|---|
+  | **Value** | + value, − sentiment | Buys cheap vs. fair value, fades panic — contrarian and **stabilizing** (the main force tethering price to fundamentals). |
+  | **Trend** | + momentum | Chases the move — **positive feedback**, the engine of trends and bubbles. |
+  | **Contrarian** | + mean-reversion, − momentum | Fades extremes — **negative feedback**, damps swings. |
+  | **News** | + sentiment | Trades information shocks into directional moves. |
+  | **Balanced** | all four equally | A generalist. |
+  | **Adaptive** | starts balanced, then **learns** | Re-weights its signals toward whichever has recently predicted returns. |
 
-- **News / informed traders** — trade in the direction of current market
-  **sentiment** (see section 7): buy on good news, sell on bad, sizing up with
-  the strength of the signal. *Emergent effect:* they translate information
-  shocks into directional price moves.
-
-- **Value / fundamental investors** — anchor to an estimated **intrinsic "fair
-  value"** and demand a **margin of safety**: buy only when price is well below
-  fair value, sell when it's well above. *Emergent effect:* deeply **contrarian
-  and stabilizing** — they buy when others panic and sell into euphoria, putting
-  a floor under crashes and a ceiling on manias. Conceptually it's mean-reversion
-  anchored to a fixed **fair value** rather than a recent moving average, and it
-  **fades sentiment** (buys panics, sells euphoria).
+  Every style has a **learning rate**: `0` = a *fixed* personality (weights never
+  change); `> 0` = it **adapts** its weights over time (only *Adaptive* does this
+  by default, but you can turn learning on for any style). Instead of firing an
+  order every tick, a trader rebalances only when its position drifts meaningfully
+  off its target exposure — so a stable view means little trading, and a flipped
+  view means it reverses. Traders may also **short** (see section 8).
 
 - **FOMO herd (retail)** — chase *accelerating* up-moves, piling in late as a
   rally steepens. *Emergent effect:* they pour fuel on bubbles near the top and
@@ -229,9 +228,11 @@ half in cash and half in shares, so they can trade either direction immediately.
 - **Market maker** — provides liquidity and earns the spread (section 4). *Emergent
   effect:* tighter spreads, smoother fills, and a general damping of volatility.
 
-> All nine archetypes above are implemented and can be added, removed, and tuned
-> live from the Agents panel: noise, momentum, mean-reversion, news, market maker,
-> value, FOMO herd, whale, and panic seller.
+> All of these are implemented and can be added, removed, and tuned live from the
+> Agents panel: **noise, market maker, FOMO herd, whale, panic seller**, and the
+> **Trader** (with the Value / Trend / Contrarian / News / Balanced / Adaptive
+> styles). The **Agent Decisions** view explains what each one would do right now
+> and why.
 
 ---
 

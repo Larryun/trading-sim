@@ -1,8 +1,8 @@
 import { OrderBook } from './orderBook';
-import { AGENT_TYPE_LABELS, applyTrade, createAgent, decideOrder } from './agents';
+import { AGENT_TYPE_LABELS, TRADER_STYLES, applyTrade, createAgent, decideOrder } from './agents';
 import { randomHeadline } from './news';
 import { RingBuffer } from './ringBuffer';
-import type { Agent, AgentAccount, AgentType, MarketState, NewsEvent, Side, Trade, UserOrderRecord } from './types';
+import type { Agent, AgentAccount, AgentType, MarketState, NewsEvent, Side, Trade, TraderStyle, UserOrderRecord } from './types';
 
 // The engine instance lives in a useRef and is NOT rebuilt by HMR, so editing
 // this module while the app runs would leave a stale instance (missing new agent
@@ -29,7 +29,7 @@ const FUNDAMENTAL_DIFFUSION = 0.06;
 // Short selling: bearish "view" traders can borrow & sell (shares go negative),
 // collateralized by their cash. If a rising price wipes out that collateral they
 // get margin-called and forced to buy back — the fuel for short squeezes.
-const CAN_SHORT = new Set<AgentType>(['value', 'meanReversion', 'momentum', 'news', 'adaptive']);
+const CAN_SHORT = new Set<AgentType>(['trader']);
 const SHORT_COLLATERAL = 1; // may short up to this * cash worth of shares
 const MAINT_MARGIN = 0.25; // margin call when equity falls below this * short exposure
 // Sentiment realism: beyond discrete news jumps, the "mood" also reacts to recent
@@ -100,7 +100,7 @@ export class SimulationEngine {
   totalFeesPaid = 0;
 
   private nextAgentNum: Record<AgentType, number> = {
-    noise: 0, momentum: 0, meanReversion: 0, news: 0, marketMaker: 0, value: 0, fomoHerd: 0, whale: 0, panicSeller: 0, adaptive: 0,
+    noise: 0, marketMaker: 0, fomoHerd: 0, whale: 0, panicSeller: 0, trader: 0,
   };
   private nextAgentId = 1;
 
@@ -145,11 +145,14 @@ export class SimulationEngine {
     return event;
   }
 
-  addAgent(type: AgentType, capital: number): Agent {
+  addAgent(type: AgentType, capital: number, style: TraderStyle = 'balanced'): Agent {
     this.nextAgentNum[type] += 1;
     const id = `agent-${this.nextAgentId++}`;
-    const name = `${AGENT_TYPE_LABELS[type]} #${this.nextAgentNum[type]}`;
-    const agent = createAgent(type, capital, this.currentPrice, id, name);
+    // Traders carry their style in the name (e.g. "Value trader #2") so the different
+    // personalities are distinguishable in the lists; everything else uses its type label.
+    const label = type === 'trader' ? `${TRADER_STYLES[style].label} trader` : AGENT_TYPE_LABELS[type];
+    const name = `${label} #${this.nextAgentNum[type]}`;
+    const agent = createAgent(type, capital, this.currentPrice, id, name, style);
     // A new participant brings its own shares into the market (its share of the
     // float), so adding an agent grows the float and removing one retires it.
     this.agents.push(agent);
@@ -161,7 +164,7 @@ export class SimulationEngine {
     this.agents = this.agents.filter((a) => a.id !== id);
   }
 
-  updateAgentParams(id: string, patch: Record<string, number>): void {
+  updateAgentParams(id: string, patch: Record<string, unknown>): void {
     const agent = this.agents.find((a) => a.id === id);
     if (agent) Object.assign(agent, patch);
   }

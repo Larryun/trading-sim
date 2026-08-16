@@ -18,9 +18,9 @@
  */
 import { readFileSync } from 'node:fs';
 import { SimulationEngine } from '../src/sim/engine';
-import type { AgentType } from '../src/sim/types';
+import type { AgentType, TraderStyle } from '../src/sim/types';
 
-interface SeedEntry { type: AgentType; capital: number; params?: Record<string, number> }
+interface SeedEntry { type: AgentType; capital: number; style?: TraderStyle; params?: Record<string, number> }
 interface Config {
   ticks?: number;
   autoNews?: boolean;
@@ -32,18 +32,20 @@ interface Config {
 }
 
 const DEFAULT_SEED: SeedEntry[] = [
-  { type: 'marketMaker', capital: 300000 },
-  { type: 'marketMaker', capital: 300000 },
-  { type: 'noise', capital: 20000 },
-  { type: 'noise', capital: 20000 },
-  { type: 'momentum', capital: 20000 },
-  { type: 'meanReversion', capital: 30000 },
-  { type: 'news', capital: 20000 },
-  { type: 'value', capital: 80000 },
-  { type: 'value', capital: 80000 },
-  { type: 'value', capital: 80000 },
-  { type: 'fomoHerd', capital: 20000 },
-  { type: 'fomoHerd', capital: 20000 },
+  { type: 'marketMaker', capital: 750000 },
+  { type: 'marketMaker', capital: 750000 },
+  { type: 'marketMaker', capital: 750000 },
+  { type: 'marketMaker', capital: 750000 },
+  { type: 'marketMaker', capital: 750000 },
+  { type: 'trader', capital: 500000, style: 'value' },
+  { type: 'trader', capital: 500000, style: 'value' },
+  { type: 'trader', capital: 500000, style: 'value' },
+  { type: 'trader', capital: 40000, style: 'trend' },
+  { type: 'trader', capital: 40000, style: 'news' },
+  { type: 'trader', capital: 40000, style: 'contrarian' },
+  { type: 'trader', capital: 100000, style: 'adaptive' },
+  { type: 'noise', capital: 25000 },
+  { type: 'noise', capital: 25000 },
   { type: 'panicSeller', capital: 40000 },
   { type: 'panicSeller', capital: 40000 },
 ];
@@ -63,7 +65,7 @@ function evaluate(cfg: Config) {
   if (cfg.sentimentDecay != null) e.sentimentDecay = cfg.sentimentDecay;
 
   for (const s of cfg.seed ?? DEFAULT_SEED) {
-    const a = e.addAgent(s.type, s.capital);
+    const a = e.addAgent(s.type, s.capital, s.style);
     if (s.params) e.updateAgentParams(a.id, s.params);
   }
 

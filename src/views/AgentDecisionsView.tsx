@@ -1,10 +1,8 @@
 import { useMemo } from 'react';
 import { useSim } from '../SimContext';
 import { panel, pageWrap } from '../ui';
-import { AGENT_TYPE_COLORS, AGENT_TYPE_LABELS, explainDecision, type Verdict } from '../sim/agents';
-import type { Agent, AgentType, MarketState } from '../sim/types';
-
-const AGENT_TYPES: AgentType[] = ['noise', 'momentum', 'meanReversion', 'news', 'value', 'fomoHerd', 'whale', 'panicSeller', 'marketMaker'];
+import { agentColor, agentStyleLabel, explainDecision, type Verdict } from '../sim/agents';
+import type { Agent, MarketState } from '../sim/types';
 
 const VERDICT_STYLE: Record<Verdict, { label: string; color: string }> = {
   buy: { label: 'WOULD BUY', color: '#4ade80' },
@@ -20,15 +18,17 @@ export function AgentDecisionsView() {
     [sim.recentPrices, sim.tick, sim.sentiment, sim.fundamentalValue],
   );
 
-  // One representative agent per type present, to explain that type's live decision.
+  // One representative per kind of trader to explain its live decision. Traders are
+  // split by STYLE (each personality decides differently), everyone else by type.
   const reps = useMemo(() => {
-    const byType = new Map<AgentType, { agent: Agent; count: number }>();
+    const byKind = new Map<string, { agent: Agent; count: number }>();
     for (const a of sim.agents) {
-      const e = byType.get(a.type);
+      const key = a.type === 'trader' ? `trader:${a.style}` : a.type;
+      const e = byKind.get(key);
       if (e) e.count++;
-      else byType.set(a.type, { agent: a, count: 1 });
+      else byKind.set(key, { agent: a, count: 1 });
     }
-    return AGENT_TYPES.filter((t) => byType.has(t)).map((t) => ({ type: t, ...byType.get(t)! }));
+    return [...byKind.entries()].map(([key, v]) => ({ key, ...v }));
   }, [sim.agents]);
 
   return (
@@ -45,15 +45,15 @@ export function AgentDecisionsView() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
-        {reps.map(({ type, agent, count }) => {
+        {reps.map(({ key, agent, count }) => {
           const ex = explainDecision(agent, market);
           const vs = VERDICT_STYLE[ex.verdict];
-          const color = AGENT_TYPE_COLORS[type];
+          const color = agentColor(agent);
           return (
-            <div key={type} style={{ ...panel }}>
+            <div key={key} style={{ ...panel }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                 <span style={{ width: 10, height: 10, borderRadius: '50%', background: color, display: 'inline-block' }} />
-                <span style={{ fontWeight: 700, fontSize: 14, color }}>{AGENT_TYPE_LABELS[type]}</span>
+                <span style={{ fontWeight: 700, fontSize: 14, color }}>{agentStyleLabel(agent)}</span>
                 <span style={{ fontSize: 11, color: '#666' }}>×{count}</span>
                 <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, color: vs.color, border: `1px solid ${vs.color}55`, borderRadius: 5, padding: '2px 8px' }}>
                   {vs.label}

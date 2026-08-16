@@ -2,15 +2,16 @@ export type Side = 'buy' | 'sell';
 
 export type AgentType =
   | 'noise'
-  | 'momentum'
-  | 'meanReversion'
-  | 'news'
   | 'marketMaker'
-  | 'value'
-  | 'fomoHerd'
   | 'whale'
+  | 'fomoHerd'
   | 'panicSeller'
-  | 'adaptive';
+  | 'trader';
+
+// Trader styles = a weighting over the [value, momentum, meanReversion, sentiment]
+// signals. Different styles = different kinds of people. 'Adaptive' starts balanced
+// but learns; the rest are fixed personalities (learningRate 0).
+export type TraderStyle = 'value' | 'trend' | 'contrarian' | 'news' | 'balanced' | 'adaptive';
 
 /** What an agent wants to do this tick. A `limitPrice` makes it a resting limit order. */
 export interface OrderIntent {
@@ -65,38 +66,27 @@ export interface NoiseAgent extends AgentAccount {
   stopLoss: number; // sell holdings once down this % vs avg cost (0 = off)
 }
 
-export interface MomentumAgent extends AgentAccount {
+/**
+ * Generalized directional trader: holds a target exposure driven by a weighted
+ * blend of signals (value, momentum, mean-reversion, sentiment). Its `style` sets
+ * those weights (a "personality"); with learningRate > 0 it also adapts them.
+ * This one type replaces the old value / momentum / mean-reversion / news / adaptive agents.
+ */
+export interface TraderAgent extends AgentAccount {
   id: string;
   name: string;
-  type: 'momentum';
-  window: number; // ticks to look back for the trend
-  sensitivity: number; // scales order size with the observed % change
-  activity: number; // probability [0,1] it acts on a given tick (async arrivals)
-  takeProfit: number; // sell holdings once up this % vs avg cost (0 = off)
-  stopLoss: number; // sell holdings once down this % vs avg cost (0 = off)
-}
-
-export interface MeanReversionAgent extends AgentAccount {
-  id: string;
-  name: string;
-  type: 'meanReversion';
-  window: number; // ticks for the moving average
-  threshold: number; // % deviation from MA required to act
-  strength: number; // scales order size with the deviation
-  activity: number; // probability [0,1] it acts on a given tick (async arrivals)
-  takeProfit: number; // sell holdings once up this % vs avg cost (0 = off)
-  stopLoss: number; // sell holdings once down this % vs avg cost (0 = off)
-}
-
-/** Informed / news trader: trades in the direction of current market sentiment. */
-export interface NewsAgent extends AgentAccount {
-  id: string;
-  name: string;
-  type: 'news';
-  orderSize: number; // base shares per order (scaled by sentiment strength)
-  activity: number; // probability [0,1] it acts on a given tick (async arrivals)
-  takeProfit: number; // sell holdings once up this % vs avg cost (0 = off)
-  stopLoss: number; // sell holdings once down this % vs avg cost (0 = off)
+  type: 'trader';
+  style: TraderStyle;
+  weights: number[]; // signed weights over [value, momentum, meanReversion, sentiment]
+  learningRate: number; // 0 = fixed personality; > 0 = adapts weights toward what's working
+  conviction: number; // how much target exposure scales with the blended score
+  window: number; // lookback for the momentum / moving-average signals
+  activity: number;
+  lastSignals: number[]; // signal snapshot from its previous decision
+  lastPrice: number; // price at its previous decision (to score the signals)
+  smoothScore: number; // EMA of the blended score, so it trades the view not the noise
+  takeProfit: number; // 0 (rebalances toward target instead)
+  stopLoss: number; // 0
 }
 
 /** Market maker: posts two-sided resting limit quotes to earn the spread. */
@@ -113,20 +103,6 @@ export interface MarketMakerAgent extends AgentAccount {
   activity: number; // probability [0,1] it re-quotes on a given tick
   takeProfit: number; // unused for MM (kept for shared overlay); default 0
   stopLoss: number; // unused for MM; default 0
-}
-
-/** Value / fundamental investor: anchors to a fixed fair value, fades the crowd. */
-export interface ValueAgent extends AgentAccount {
-  id: string;
-  name: string;
-  type: 'value';
-  marginOfSafety: number; // dead-band: min divergence from fair value before acting
-  conviction: number; // order-size multiplier scaling with discount/premium
-  contrarianGain: number; // how strongly negative sentiment raises buy willingness
-  maxOrderShares: number; // per-order cap to avoid severe slippage
-  activity: number;
-  takeProfit: number; // 0 (value investors don't stop out)
-  stopLoss: number; // 0
 }
 
 /** Retail FOMO crowd: chases accelerating up-moves, buy-only, bagholds reversals. */
@@ -175,34 +151,13 @@ export interface PanicSellerAgent extends AgentAccount {
   stopLoss: number; // 0
 }
 
-/** Adaptive "AI" trader: blends multiple signals and learns which to trust (online weights). */
-export interface AdaptiveAgent extends AgentAccount {
-  id: string;
-  name: string;
-  type: 'adaptive';
-  window: number; // lookback for the momentum / moving-average signals
-  conviction: number; // order-size multiplier on the blended score
-  learningRate: number; // how fast signal weights adapt to recent performance
-  activity: number;
-  takeProfit: number; // 0 (signal-driven, flips on its own)
-  stopLoss: number; // 0
-  weights: number[]; // live weights for [value, momentum, meanRev, sentiment]
-  lastSignals: number[]; // signal snapshot from its previous decision
-  lastPrice: number; // price at its previous decision (to score the signals)
-  smoothScore: number; // EMA of the blended score, so it doesn't churn on noise
-}
-
 export type Agent =
   | NoiseAgent
-  | MomentumAgent
-  | MeanReversionAgent
-  | NewsAgent
   | MarketMakerAgent
-  | ValueAgent
   | FomoHerdAgent
   | WhaleAgent
   | PanicSellerAgent
-  | AdaptiveAgent;
+  | TraderAgent;
 
 /** A record of one executed user order, for the order-history view. */
 export interface UserOrderRecord {

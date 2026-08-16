@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { SimulationEngine } from '../sim/engine';
 import { buildBars, buildVolumeBars, type Bar, type VolumeBar } from '../sim/bars';
 import type { BookLevel, RestingUserOrder } from '../sim/orderBook';
-import type { Agent, AgentAccount, AgentType, Side, UserOrderRecord } from '../sim/types';
+import type { Agent, AgentAccount, AgentType, Side, TraderStyle, UserOrderRecord } from '../sim/types';
 
 const BOOK_DEPTH = 12; // price levels shown per side in the order-book view
 export type ChartType = 'line' | 'candle';
@@ -24,21 +24,21 @@ const MAX_DISPLAY_BARS = 120;
 function createEngine(): SimulationEngine {
   const engine = new SimulationEngine();
   // Empirically tuned mix (see the tuning workflow): deep, well-capitalized market
-  // makers provide the book; a strong value cohort tethers price to the news-driven
-  // fundamental; panic sellers add downside pressure; noise/momentum/news add churn.
+  // makers provide the book; a strong VALUE-style trader cohort tethers price to the
+  // news-driven fundamental; a spread of other trader styles (trend/news/contrarian/
+  // adaptive) simulates a diverse crowd; panic sellers add downside pressure; noise churns.
   for (let i = 0; i < 5; i++) engine.addAgent('marketMaker', 750000);
-  for (let i = 0; i < 4; i++) engine.addAgent('value', 500000);
-  engine.addAgent('momentum', 30000);
-  engine.addAgent('momentum', 30000);
+  for (let i = 0; i < 3; i++) engine.addAgent('trader', 500000, 'value'); // anchor price to fair value
+  engine.addAgent('trader', 40000, 'trend');
+  engine.addAgent('trader', 40000, 'news');
+  engine.addAgent('trader', 40000, 'contrarian');
+  engine.addAgent('trader', 100000, 'adaptive'); // a learning multi-signal trader
   engine.addAgent('noise', 25000);
   engine.addAgent('noise', 25000);
   engine.addAgent('panicSeller', 40000);
   engine.addAgent('panicSeller', 40000);
-  engine.addAgent('news', 40000);
-  engine.addAgent('adaptive', 100000); // a learning multi-signal trader
 
-  // Not seeded by default (they fight fundamental tracking / are situational):
-  // mean-reversion, FOMO herd, whale — all available from the Add dropdown.
+  // Not seeded by default (situational): FOMO herd, whale — available from the Add dropdown.
   return engine;
 }
 
@@ -177,8 +177,8 @@ export function useSimulation() {
     setBookDepth(engineRef.current.book.getDepth(BOOK_DEPTH));
   }, []);
 
-  const addAgent = useCallback((type: AgentType, capital: number) => {
-    engineRef.current.addAgent(type, capital);
+  const addAgent = useCallback((type: AgentType, capital: number, style?: TraderStyle) => {
+    engineRef.current.addAgent(type, capital, style);
     setAgents(engineRef.current.agents.map((a) => ({ ...a })));
     setFloatBreakdown(floatOf(engineRef.current));
   }, []);
@@ -189,7 +189,7 @@ export function useSimulation() {
     setFloatBreakdown(floatOf(engineRef.current));
   }, []);
 
-  const updateAgentParams = useCallback((id: string, patch: Record<string, number>) => {
+  const updateAgentParams = useCallback((id: string, patch: Record<string, unknown>) => {
     engineRef.current.updateAgentParams(id, patch);
     setAgents(engineRef.current.agents.map((a) => ({ ...a })));
   }, []);

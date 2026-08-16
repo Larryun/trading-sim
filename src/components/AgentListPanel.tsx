@@ -1,40 +1,36 @@
 import { useMemo, useState } from 'react';
-import type { Agent, AgentType } from '../sim/types';
-import { AGENT_TYPE_COLORS, AGENT_TYPE_LABELS } from '../sim/agents';
+import type { Agent, AgentType, TraderStyle } from '../sim/types';
+import { AGENT_TYPE_COLORS, AGENT_TYPE_LABELS, TRADER_STYLES, agentColor } from '../sim/agents';
 
 interface Props {
   agents: Agent[];
   currentPrice: number;
-  addAgent: (type: AgentType, capital: number) => void;
+  addAgent: (type: AgentType, capital: number, style?: TraderStyle) => void;
   removeAgent: (id: string) => void;
-  updateAgentParams: (id: string, patch: Record<string, number>) => void;
+  updateAgentParams: (id: string, patch: Record<string, unknown>) => void;
 }
 
-const AGENT_TYPES: AgentType[] = ['noise', 'momentum', 'meanReversion', 'news', 'marketMaker', 'value', 'fomoHerd', 'whale', 'panicSeller', 'adaptive'];
+const AGENT_TYPES: AgentType[] = ['noise', 'marketMaker', 'fomoHerd', 'whale', 'panicSeller', 'trader'];
+const TRADER_STYLE_KEYS = Object.keys(TRADER_STYLES) as TraderStyle[];
 
-// Which types use the shared take-profit / stop-loss exit overlay.
-const USES_EXITS: AgentType[] = ['noise', 'momentum', 'meanReversion', 'news', 'fomoHerd'];
+// Which types use the shared take-profit / stop-loss exit overlay. (Traders manage
+// their exposure via a target/rebalance band, so TP/SL would fight it — excluded.)
+const USES_EXITS: AgentType[] = ['noise', 'fomoHerd'];
 
 // Hover help for each parameter, keyed by its slider label.
 const PARAM_HELP: Record<string, string> = {
   'Trade frequency': 'Chance this agent places a random order each tick.',
   'Max order size': 'Largest single order, in shares.',
-  'Lookback window': 'How many ticks back the trend is measured over.',
-  Sensitivity: "How aggressively order size scales with the trend's strength.",
-  'MA window': 'Ticks used for the moving average it reverts toward.',
-  Threshold: 'How far price must deviate from the average before it trades.',
-  Strength: 'How aggressively order size scales with the deviation.',
-  'Order size': 'Base shares per order, scaled by how strong sentiment is.',
+  Style: 'Signal-weight personality: what mix of value, trend, mean-reversion and sentiment it trades on.',
+  'Signal window': 'Ticks used for the momentum / moving-average signals.',
   'Base half-spread': 'Baseline distance of its bid/ask from mid (basis points), in calm markets.',
   'Vol sensitivity': 'How much it widens the spread as recent volatility rises — its defense against informed flow.',
   'Max half-spread': 'Cap on how wide the volatility-adjusted spread can get.',
   'Quote size': 'Shares quoted at each price level, on each side.',
   'Depth (levels)': 'How many price levels it quotes per side — more = a deeper book.',
   'Inventory skew': 'How strongly it shifts quotes to unwind excess inventory.',
-  'Margin of safety': 'Required gap from the fundamental value before it acts (a dead band).',
-  Conviction: 'How aggressively order size scales with the discount/premium.',
-  'Contrarian gain': 'How much negative sentiment (panic) increases its buying.',
-  'Signal window': 'Ticks used to detect an accelerating up-move.',
+  Conviction: 'How large a target exposure the blended signal score translates into.',
+  'FOMO window': 'Ticks used to detect an accelerating up-move.',
   'Entry threshold': 'Minimum recent run-up needed before it chases.',
   'Sentiment gain': 'How much positive sentiment amplifies its buying.',
   Convexity: 'How much harder it buys as the rally gets more extended.',
@@ -58,6 +54,7 @@ const PARAM_HELP: Record<string, string> = {
 
 export function AgentListPanel({ agents, currentPrice, addAgent, removeAgent, updateAgentParams }: Props) {
   const [newType, setNewType] = useState<AgentType>('noise');
+  const [newStyle, setNewStyle] = useState<TraderStyle>('value');
   const [capital, setCapital] = useState(20000);
 
   // Group agents by type in a single pass (instead of one filter per type).
@@ -87,6 +84,18 @@ export function AgentListPanel({ agents, currentPrice, addAgent, removeAgent, up
               <option key={t} value={t}>{AGENT_TYPE_LABELS[t]}</option>
             ))}
           </select>
+          {newType === 'trader' && (
+            <select
+              value={newStyle}
+              onChange={(e) => setNewStyle(e.target.value as TraderStyle)}
+              title="Trader personality (signal-weight preset)"
+              style={{ background: '#0f0f1e', color: '#eee', border: '1px solid #333', borderRadius: 6, padding: '6px 8px', fontSize: 13 }}
+            >
+              {TRADER_STYLE_KEYS.map((s) => (
+                <option key={s} value={s}>{TRADER_STYLES[s].label}</option>
+              ))}
+            </select>
+          )}
           <label style={{ fontSize: 12, color: '#888', display: 'flex', alignItems: 'center', gap: 4 }}>
             $
             <input
@@ -99,7 +108,7 @@ export function AgentListPanel({ agents, currentPrice, addAgent, removeAgent, up
             />
           </label>
           <button
-            onClick={() => addAgent(newType, capital)}
+            onClick={() => addAgent(newType, capital, newType === 'trader' ? newStyle : undefined)}
             style={{ background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, padding: '7px 14px', fontWeight: 600, cursor: 'pointer' }}
           >
             + Add
@@ -148,7 +157,7 @@ function AgentCard({
   agent: Agent;
   currentPrice: number;
   onRemove: () => void;
-  onUpdate: (patch: Record<string, number>) => void;
+  onUpdate: (patch: Record<string, unknown>) => void;
 }) {
   const [showParams, setShowParams] = useState(false);
 
@@ -159,7 +168,7 @@ function AgentCard({
   return (
     <div style={{ background: '#16162a', border: '1px solid #2a2a3a', borderRadius: 7, padding: '8px 10px', fontSize: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-        <span style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{agent.name}</span>
+        <span style={{ fontWeight: 600, color: agentColor(agent), whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{agent.name}</span>
         {/* Realized gain is the objective, so it leads the card. */}
         <span style={{ marginLeft: 'auto', color: agent.realizedPnl >= 0 ? '#4ade80' : '#f87171', fontWeight: 600 }}>
           {fmtSigned(agent.realizedPnl)}
@@ -198,32 +207,16 @@ function AgentCard({
                 onChange={(v) => onUpdate({ maxSize: v })} />
             </>
           )}
-          {agent.type === 'momentum' && (
+          {agent.type === 'trader' && (
             <>
-              <Slider label="Lookback window" value={agent.window} min={2} max={50} step={1}
+              <StylePicker agent={agent} onUpdate={onUpdate} />
+              <TraderWeights weights={agent.weights} />
+              <Slider label="Conviction" value={agent.conviction} min={0} max={20} step={0.5}
+                onChange={(v) => onUpdate({ conviction: v })} format={(v) => v.toFixed(1)} />
+              <Slider label="Signal window" value={agent.window} min={2} max={50} step={1}
                 onChange={(v) => onUpdate({ window: v })} format={(v) => `${v} ticks`} />
-              <Slider label="Sensitivity" value={agent.sensitivity} min={0} max={20} step={0.5}
-                onChange={(v) => onUpdate({ sensitivity: v })} format={(v) => v.toFixed(1)} />
-              <Slider label="Activity" value={agent.activity} min={0} max={1} step={0.05}
-                onChange={(v) => onUpdate({ activity: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
-            </>
-          )}
-          {agent.type === 'meanReversion' && (
-            <>
-              <Slider label="MA window" value={agent.window} min={2} max={50} step={1}
-                onChange={(v) => onUpdate({ window: v })} format={(v) => `${v} ticks`} />
-              <Slider label="Threshold" value={agent.threshold} min={0} max={0.1} step={0.005}
-                onChange={(v) => onUpdate({ threshold: v })} format={(v) => `${(v * 100).toFixed(1)}%`} />
-              <Slider label="Strength" value={agent.strength} min={0} max={20} step={0.5}
-                onChange={(v) => onUpdate({ strength: v })} format={(v) => v.toFixed(1)} />
-              <Slider label="Activity" value={agent.activity} min={0} max={1} step={0.05}
-                onChange={(v) => onUpdate({ activity: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
-            </>
-          )}
-          {agent.type === 'news' && (
-            <>
-              <Slider label="Order size" value={agent.orderSize} min={0} max={2000} step={50}
-                onChange={(v) => onUpdate({ orderSize: v })} format={(v) => `${v.toFixed(0)} sh`} />
+              <Slider label="Learning rate" value={agent.learningRate} min={0} max={2} step={0.05}
+                onChange={(v) => onUpdate({ learningRate: v })} format={(v) => (v === 0 ? 'fixed' : v.toFixed(2))} />
               <Slider label="Activity" value={agent.activity} min={0} max={1} step={0.05}
                 onChange={(v) => onUpdate({ activity: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
             </>
@@ -246,23 +239,9 @@ function AgentCard({
                 onChange={(v) => onUpdate({ activity: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
             </>
           )}
-          {agent.type === 'value' && (
-            <>
-              <Slider label="Margin of safety" value={agent.marginOfSafety} min={0} max={0.4} step={0.01}
-                onChange={(v) => onUpdate({ marginOfSafety: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
-              <Slider label="Conviction" value={agent.conviction} min={0} max={15} step={0.5}
-                onChange={(v) => onUpdate({ conviction: v })} format={(v) => v.toFixed(1)} />
-              <Slider label="Contrarian gain" value={agent.contrarianGain} min={0} max={1} step={0.05}
-                onChange={(v) => onUpdate({ contrarianGain: v })} format={(v) => v.toFixed(2)} />
-              <Slider label="Max order size" value={agent.maxOrderShares} min={50} max={1500} step={50}
-                onChange={(v) => onUpdate({ maxOrderShares: v })} format={(v) => `${v.toFixed(0)} sh`} />
-              <Slider label="Activity" value={agent.activity} min={0} max={1} step={0.05}
-                onChange={(v) => onUpdate({ activity: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
-            </>
-          )}
           {agent.type === 'fomoHerd' && (
             <>
-              <Slider label="Signal window" value={agent.shortWindow} min={2} max={10} step={1}
+              <Slider label="FOMO window" value={agent.shortWindow} min={2} max={10} step={1}
                 onChange={(v) => onUpdate({ shortWindow: v })} format={(v) => `${v} ticks`} />
               <Slider label="Entry threshold" value={agent.entryThreshold} min={0} max={0.03} step={0.001}
                 onChange={(v) => onUpdate({ entryThreshold: v })} format={(v) => `${(v * 100).toFixed(1)}%`} />
@@ -310,18 +289,6 @@ function AgentCard({
                 onChange={(v) => onUpdate({ activity: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
             </>
           )}
-          {agent.type === 'adaptive' && (
-            <>
-              <Slider label="Signal window" value={agent.window} min={2} max={50} step={1}
-                onChange={(v) => onUpdate({ window: v })} format={(v) => `${v} ticks`} />
-              <Slider label="Conviction" value={agent.conviction} min={0} max={20} step={0.5}
-                onChange={(v) => onUpdate({ conviction: v })} format={(v) => v.toFixed(1)} />
-              <Slider label="Learning rate" value={agent.learningRate} min={0} max={2} step={0.05}
-                onChange={(v) => onUpdate({ learningRate: v })} format={(v) => v.toFixed(2)} />
-              <Slider label="Activity" value={agent.activity} min={0} max={1} step={0.05}
-                onChange={(v) => onUpdate({ activity: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
-            </>
-          )}
           {/* Take-profit / stop-loss — only for types that use the shared exit overlay. */}
           {USES_EXITS.includes(agent.type) && (
             <>
@@ -362,6 +329,48 @@ function Slider({
       <input type="range" min={min} max={max} step={step} value={value}
         onChange={(e) => onChange(Number(e.target.value))} style={{ width: '100%' }} />
     </label>
+  );
+}
+
+type TraderAgent = Extract<Agent, { type: 'trader' }>;
+
+// Live style switch: picking a personality resets the signal weights and learning
+// rate to that preset. The four signal weights are shown read-only below it.
+function StylePicker({ agent, onUpdate }: { agent: TraderAgent; onUpdate: (patch: Record<string, unknown>) => void }) {
+  const help = PARAM_HELP['Style'];
+  return (
+    <label style={{ display: 'block', marginBottom: 6, fontSize: 11 }}>
+      <div style={{ marginBottom: 2, color: '#bbb' }}>
+        {help ? <span className="param-tip" data-tip={help}>Style</span> : <span>Style</span>}
+      </div>
+      <select
+        value={agent.style}
+        onChange={(e) => {
+          const style = e.target.value as TraderStyle;
+          const preset = TRADER_STYLES[style];
+          onUpdate({ style, weights: [...preset.weights], learningRate: preset.learningRate });
+        }}
+        style={{ width: '100%', background: '#0f0f1e', color: TRADER_STYLES[agent.style].color, border: '1px solid #333', borderRadius: 6, padding: '4px 6px', fontSize: 11 }}
+      >
+        {TRADER_STYLE_KEYS.map((s) => (
+          <option key={s} value={s}>{TRADER_STYLES[s].label}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+// Read-only view of a trader's current signal weights (its personality vector).
+function TraderWeights({ weights }: { weights: number[] }) {
+  const names = ['val', 'mom', 'rev', 'sent'];
+  return (
+    <div style={{ display: 'flex', gap: 8, marginBottom: 6, fontSize: 10, color: '#888', fontVariantNumeric: 'tabular-nums' }}>
+      {weights.map((w, i) => (
+        <span key={names[i]}>
+          {names[i]} <span style={{ color: w >= 0 ? '#4ade80' : '#f87171' }}>{w >= 0 ? '+' : ''}{(w * 100).toFixed(0)}</span>
+        </span>
+      ))}
+    </div>
   );
 }
 
