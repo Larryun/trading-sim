@@ -81,10 +81,12 @@ const OPTION_MAX_OI_FRACTION = 0.15;
 // Short selling: bearish "view" traders can borrow & sell (shares go negative),
 // collateralized by their cash. If a rising price wipes out that collateral they
 // get margin-called and forced to buy back — the fuel for short squeezes.
-// Makers are included so a maker that has sold its inventory can still post an ask
-// (real makers go short routinely to quote both sides). This is only safe alongside the
-// maker's inventory limit in agents.ts — unlimited maker shorting bankrupts them.
-const CAN_SHORT = new Set<AgentType>(['trader', 'dealer', 'marketMaker']);
+// Market makers are deliberately NOT included. Their inventory anchor is long-biased
+// (~half of equity in stock), so they never need to short to quote — and if they can, they
+// slowly drift net short, at which point margin calls start firing. A margin call skips
+// that agent's quoting for the tick, so a maker stuck covering stops posting bids
+// entirely and the bid side of the book disappears.
+const CAN_SHORT = new Set<AgentType>(['trader', 'dealer']);
 const SHORT_COLLATERAL = 1; // may short up to this * cash worth of shares
 const MAINT_MARGIN = 0.25; // margin call when equity falls below this * short exposure
 // Sentiment realism: beyond discrete news jumps, the "mood" also reacts to recent
