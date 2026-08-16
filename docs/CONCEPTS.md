@@ -345,14 +345,16 @@ chasing it.
 Every participant — agents and you — has a real, finite account: some **cash**
 and some **shares**. Orders are constrained by that account.
 
-- **You trade a cash account.** Buys can't spend more cash than you have (the
-  order is trimmed to what you can afford at the current price, including the fee),
-  and sells can't exceed the shares you hold — **you can't short**. If an order
-  can't fully execute, the trade panel tells you why (limited by your cash, by your
-  shares, out of liquidity, or resting as a limit order). Orders placed while the
-  sim is **paused** fill immediately against the current book.
-- **Short selling** — bearish **Trader** agents (not you) can sell shares they
-  don't own by borrowing them (the position goes negative), collateralized by cash.
+- **You trade a cash/margin account.** Buys can't spend more cash than you have
+  (the order is trimmed to what you can afford at the current price, including the
+  fee). By default sells can't exceed the shares you hold, but flip on the **Short**
+  toggle and you can **sell short** — collateralized by cash, with a maintenance
+  margin, so a rising price can margin-call (buy in) your short just like the agents.
+  If an order can't fully execute, the trade panel tells you why (limited by your
+  cash, by your shares, out of liquidity, or resting). Orders placed while the sim
+  is **paused** fill immediately against the current book.
+- **Short selling** — bearish **Trader** agents (and you, with the toggle on) can
+  sell shares they don't own by borrowing them (the position goes negative), collateralized by cash.
   A short **profits when the price falls** and loses when it rises. This is the real
   way a bear expresses a view — not a permanent "sell bias." It's also what lets
   an *overvalued* stock be pushed back down: once long holders run out of shares to
