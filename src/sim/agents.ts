@@ -358,7 +358,7 @@ export function explainDecision(agent: Agent, market: MarketState): DecisionExpl
         signals,
         verdict: v,
         detail: v === 'hold'
-          ? 'Blended score is near zero — near its target exposure, so it waits.'
+          ? 'Its signals roughly cancel out — no strong view, so it holds its current position.'
           : `Weighted score → ${v}; it rebalances toward the exposure this view implies.${learns ? ' Weights adapt each tick toward whatever has been predicting returns.' : ''}`,
       };
     }
