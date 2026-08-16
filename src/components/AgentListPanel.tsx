@@ -13,7 +13,7 @@ interface Props {
   getPnlSpark: (id: string) => number[];
 }
 
-const AGENT_TYPES: AgentType[] = ['noise', 'marketMaker', 'fomoHerd', 'whale', 'panicSeller', 'trader', 'dealer'];
+const AGENT_TYPES: AgentType[] = ['noise', 'marketMaker', 'fomoHerd', 'whale', 'panicSeller', 'trader', 'dealer', 'speculator'];
 const TRADER_STYLE_KEYS = Object.keys(TRADER_STYLES) as TraderStyle[];
 
 // Which types use the shared take-profit / stop-loss exit overlay.
@@ -44,6 +44,8 @@ const PARAM_HELP: Record<string, string> = {
   'Net gamma': 'Dealer options gamma. Negative = short gamma (buys rallies/sells dips → amplifies moves, gamma squeeze); positive = long gamma (fades moves, pins to strike).',
   'Open interest': 'Scales how many shares the dealer must hedge per unit price move.',
   Strike: 'The option strike. Gamma is more negative above it (a call wall) and milder/long below.',
+  'Bias threshold': 'How strongly its signal must lean before it buys calls (bullish) or puts (bearish).',
+  'Budget (% cash)': 'Most of its cash it spends on option premium per trade.',
   'Peak window': 'Ticks used to track the recent high for drawdown.',
   'Panic threshold': 'Drawdown from the peak that triggers selling.',
   Capitulation: 'Drawdown at which it dumps nearly everything.',
@@ -229,6 +231,14 @@ function AgentParams({ agent, onUpdate }: { agent: Agent; onUpdate: (patch: Reco
           <Slider label="Net gamma" value={agent.netGamma} min={-1.5} max={1.5} step={0.1} onChange={(v) => onUpdate({ netGamma: v })} format={(v) => `${v.toFixed(1)} (${v < 0 ? 'short' : 'long'})`} />
           <Slider label="Open interest" value={agent.openInterest} min={0} max={20000} step={250} onChange={(v) => onUpdate({ openInterest: v })} format={(v) => v.toFixed(0)} />
           <Slider label="Strike" value={agent.strike} min={1} max={300} step={1} onChange={(v) => onUpdate({ strike: v })} format={(v) => `$${v.toFixed(0)}`} />
+          <Slider label="Activity" value={agent.activity} min={0} max={1} step={0.05} onChange={(v) => onUpdate({ activity: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
+        </>
+      )}
+      {agent.type === 'speculator' && (
+        <>
+          <Slider label="Signal window" value={agent.window} min={2} max={50} step={1} onChange={(v) => onUpdate({ window: v })} format={(v) => `${v} ticks`} />
+          <Slider label="Bias threshold" value={agent.conviction} min={0} max={0.8} step={0.05} onChange={(v) => onUpdate({ conviction: v })} format={(v) => v.toFixed(2)} />
+          <Slider label="Budget (% cash)" value={agent.budgetFrac} min={0.02} max={0.5} step={0.02} onChange={(v) => onUpdate({ budgetFrac: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
           <Slider label="Activity" value={agent.activity} min={0} max={1} step={0.05} onChange={(v) => onUpdate({ activity: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
         </>
       )}

@@ -1,5 +1,5 @@
 import { OrderBook } from './orderBook';
-import { AGENT_TYPE_LABELS, TRADER_STYLES, applyTrade, createAgent, decideOrder } from './agents';
+import { AGENT_TYPE_LABELS, TRADER_STYLES, applyTrade, createAgent, decideOrder, speculatorSignal } from './agents';
 import { randomHeadline } from './news';
 import { RingBuffer } from './ringBuffer';
 import { blackScholes, intrinsicValue, type OptionContract, type OptionType } from './options';
@@ -59,6 +59,7 @@ const TICKS_PER_YEAR = 800; // 4 quarters × 200 ticks — for Black-Scholes tim
 const CONTRACT_MULTIPLIER = 100; // shares per contract (like real US options)
 const OPTION_LIFETIME = 400; // ticks until a freshly-issued chain expires (~2 quarters)
 const OPTION_STRIKE_OFFSETS = [-0.1, -0.05, 0, 0.05, 0.1]; // strikes as fractions around spot
+const OPTION_HEDGE_RATE = 0.2; // fraction of the delta gap the dealer hedges per tick (gradual)
 
 // Short selling: bearish "view" traders can borrow & sell (shares go negative),
 // collateralized by their cash. If a rising price wipes out that collateral they
@@ -165,7 +166,9 @@ export class SimulationEngine {
   // in the float, earns dividends, trades the book).
   optionsEnabled = false;
   optionChain: OptionContract[] = [];
-  userOptions = new Map<number, number>(); // contractId -> user net long qty (contracts)
+  // ownerId ('user' or an agent id) -> (contractId -> net long qty). The dealer is short
+  // the sum of ALL of these, so agent (speculator) open interest counts too.
+  optionPositions = new Map<string, Map<number, number>>();
   optionExpiryTick = 0;
   optionImpliedVol = 0.5; // annualized vol used to price the chain
   userOptionCashFlow = 0; // cumulative user cash from options (−premium paid, +premium/payout received)
@@ -173,7 +176,7 @@ export class SimulationEngine {
   optionsDealer: AgentAccount = { startingCapital: 0, cash: 0, shares: 0, avgCost: 0, realizedPnl: 0, tradeCount: 0 };
 
   private nextAgentNum: Record<AgentType, number> = {
-    noise: 0, marketMaker: 0, fomoHerd: 0, whale: 0, panicSeller: 0, trader: 0, dealer: 0,
+    noise: 0, marketMaker: 0, fomoHerd: 0, whale: 0, panicSeller: 0, trader: 0, dealer: 0, speculator: 0,
   };
   private nextAgentId = 1;
 
@@ -298,11 +301,30 @@ export class SimulationEngine {
     return Math.max(1e-4, (this.optionExpiryTick - this.tick) / TICKS_PER_YEAR);
   }
 
+  private accountOf(ownerId: string): AgentAccount | undefined {
+    if (ownerId === 'user') return this.user;
+    if (ownerId === 'optionsDealer') return this.optionsDealer;
+    return this.agents.find((a) => a.id === ownerId);
+  }
+
+  private optionPos(ownerId: string): Map<number, number> {
+    let m = this.optionPositions.get(ownerId);
+    if (!m) { m = new Map(); this.optionPositions.set(ownerId, m); }
+    return m;
+  }
+
+  /** Total public open interest (contracts) at a given contract, across all holders. */
+  private openInterestOf(contractId: number): number {
+    let s = 0;
+    for (const [, pos] of this.optionPositions) s += Math.abs(pos.get(contractId) ?? 0);
+    return s;
+  }
+
   /** Issue a fresh chain of calls+puts at strikes around spot, with a new expiry. */
   private rollOptionChain(): void {
     const spot = this.book.getLastTradePrice();
     this.optionChain = [];
-    this.userOptions.clear();
+    this.optionPositions.clear();
     this.optionExpiryTick = this.tick + OPTION_LIFETIME;
     for (const off of OPTION_STRIKE_OFFSETS) {
       const strike = Math.max(1, Math.round(spot * (1 + off)));
@@ -312,50 +334,54 @@ export class SimulationEngine {
     }
   }
 
-  /** The chain priced right now (Black-Scholes) with the user's position per contract. */
-  getOptionChain(): { id: number; type: OptionType; strike: number; price: number; delta: number; gamma: number; userQty: number }[] {
+  /** The chain priced right now (Black-Scholes) with the user's position + total OI. */
+  getOptionChain(): { id: number; type: OptionType; strike: number; price: number; delta: number; gamma: number; userQty: number; openInterest: number }[] {
     const spot = this.book.getLastTradePrice();
     const tau = this.optionTau();
+    const userPos = this.optionPositions.get('user');
     return this.optionChain.map((c) => {
       const g = blackScholes(c.type, spot, c.strike, tau, this.optionImpliedVol);
-      return { id: c.id, type: c.type, strike: c.strike, price: g.price, delta: g.delta, gamma: g.gamma, userQty: this.userOptions.get(c.id) ?? 0 };
+      return { id: c.id, type: c.type, strike: c.strike, price: g.price, delta: g.delta, gamma: g.gamma, userQty: userPos?.get(c.id) ?? 0, openInterest: this.openInterestOf(c.id) };
     });
   }
 
-  /** User trades a contract: qty>0 buys to open, qty<0 sells to close (no naked short). */
-  tradeOption(contractId: number, qty: number): void {
+  /** Trade a contract for an owner: qty>0 buys to open, qty<0 sells to close (long-only). */
+  tradeOption(contractId: number, qty: number, ownerId = 'user'): void {
     if (!this.optionsEnabled || qty === 0) return;
     const c = this.optionChain.find((x) => x.id === contractId);
-    if (!c) return;
+    const acct = this.accountOf(ownerId);
+    if (!c || !acct) return;
     const spot = this.book.getLastTradePrice();
     const price = blackScholes(c.type, spot, c.strike, this.optionTau(), this.optionImpliedVol).price;
-    const held = this.userOptions.get(contractId) ?? 0;
+    const pos = this.optionPos(ownerId);
+    const held = pos.get(contractId) ?? 0;
     let q = qty;
-    if (q < 0) q = -Math.min(-q, held); // can't sell more than held
+    if (q < 0) q = -Math.min(-q, held); // can't sell more than held (no naked short)
     if (q > 0) {
       const perContract = price * CONTRACT_MULTIPLIER;
-      const affordable = perContract > 0 ? Math.floor(this.user.cash / perContract) : 0;
+      const affordable = perContract > 0 ? Math.floor(acct.cash / perContract) : 0;
       q = Math.min(q, affordable);
-      if (q <= 0) { this.lastOrderNote = 'Not enough cash for that option.'; return; }
+      if (q <= 0) { if (ownerId === 'user') this.lastOrderNote = 'Not enough cash for that option.'; return; }
     }
     if (q === 0) return;
     const premium = q * price * CONTRACT_MULTIPLIER;
-    this.user.cash -= premium; // buy pays premium; sell (q<0) receives it
+    acct.cash -= premium; // buy pays premium; sell (q<0) receives it
     this.optionsDealer.cash += premium; // the dealer writes the other side
-    this.userOptionCashFlow -= premium;
+    if (ownerId === 'user') this.userOptionCashFlow -= premium;
     const net = held + q;
-    if (Math.abs(net) < 1e-9) this.userOptions.delete(contractId); // don't retain closed positions
-    else this.userOptions.set(contractId, net);
-    this.lastOrderNote = `${q > 0 ? 'Bought' : 'Sold'} ${Math.abs(q)} ${c.strike} ${c.type} for $${Math.abs(premium).toFixed(0)}.`;
+    if (Math.abs(net) < 1e-9) pos.delete(contractId); // don't retain closed positions
+    else pos.set(contractId, net);
+    if (ownerId === 'user') this.lastOrderNote = `${q > 0 ? 'Bought' : 'Sold'} ${Math.abs(q)} ${c.strike} ${c.type} for $${Math.abs(premium).toFixed(0)}.`;
   }
 
   /** Mark-to-market value of the user's open option positions. */
   get userOptionValue(): number {
     const spot = this.book.getLastTradePrice();
     const tau = this.optionTau();
+    const pos = this.optionPositions.get('user');
     let v = 0;
-    for (const c of this.optionChain) {
-      const qty = this.userOptions.get(c.id) ?? 0;
+    if (pos) for (const c of this.optionChain) {
+      const qty = pos.get(c.id) ?? 0;
       if (qty !== 0) v += qty * blackScholes(c.type, spot, c.strike, tau, this.optionImpliedVol).price * CONTRACT_MULTIPLIER;
     }
     return v;
@@ -366,16 +392,48 @@ export class SimulationEngine {
     return this.userOptionCashFlow + this.userOptionValue;
   }
 
-  /** Shares the dealer must hold to be delta-neutral = +(public option delta). */
+  /** Shares the dealer must hold to be delta-neutral = +(all holders' option delta). */
   private optionHedgeTarget(): number {
     const spot = this.book.getLastTradePrice();
     const tau = this.optionTau();
+    const deltaByContract = new Map<number, number>();
+    for (const c of this.optionChain) deltaByContract.set(c.id, blackScholes(c.type, spot, c.strike, tau, this.optionImpliedVol).delta);
     let delta = 0;
-    for (const c of this.optionChain) {
-      const qty = this.userOptions.get(c.id) ?? 0;
-      if (qty !== 0) delta += qty * blackScholes(c.type, spot, c.strike, tau, this.optionImpliedVol).delta * CONTRACT_MULTIPLIER;
+    for (const [, pos] of this.optionPositions) {
+      for (const [cid, qty] of pos) {
+        if (qty !== 0) delta += qty * (deltaByContract.get(cid) ?? 0) * CONTRACT_MULTIPLIER;
+      }
     }
     return delta;
+  }
+
+  /** Speculators (agents) buy calls/puts by regime — builds the OI the dealer hedges. */
+  private runSpeculators(): void {
+    if (!this.optionsEnabled || this.optionChain.length === 0) return;
+    const spot = this.book.getLastTradePrice();
+    const priceWindow = this.priceRing.window(STRATEGY_WINDOW).data;
+    const market: MarketState = { priceHistory: priceWindow, tick: this.tick, sentiment: this.sentiment, fundamentalValue: this.fundamentalValue };
+    for (const a of this.agents) {
+      if (a.type !== 'speculator') continue;
+      if (Math.random() >= a.activity) continue;
+      // One bet at a time: if it already holds options, hold them to expiry (the chain
+      // roll clears positions), so open interest stays bounded instead of stacking.
+      const existing = this.optionPositions.get(a.id);
+      if (existing && [...existing.values()].some((q) => Math.abs(q) > 1e-9)) continue;
+      const sig = speculatorSignal(a, market);
+      const wantType: OptionType | null = sig > a.conviction ? 'call' : sig < -a.conviction ? 'put' : null;
+      if (!wantType) continue;
+      // Pick the nearest slightly-OTM strike of the desired type.
+      const candidates = this.optionChain.filter((c) => c.type === wantType);
+      const target = wantType === 'call' ? spot * 1.03 : spot * 0.97;
+      candidates.sort((x, y) => Math.abs(x.strike - target) - Math.abs(y.strike - target));
+      const pick = candidates[0];
+      if (!pick) continue;
+      const price = blackScholes(pick.type, spot, pick.strike, this.optionTau(), this.optionImpliedVol).price;
+      const perContract = price * CONTRACT_MULTIPLIER;
+      const qty = perContract > 0 ? Math.floor((a.budgetFrac * a.cash) / perContract) : 0;
+      if (qty >= 1) this.tradeOption(pick.id, qty, a.id);
+    }
   }
 
   /**
@@ -559,13 +617,17 @@ export class SimulationEngine {
     // paid by the dealer), then roll a fresh chain around the current price.
     if (this.optionsEnabled && this.tick >= this.optionExpiryTick) {
       const spot = this.book.getLastTradePrice();
-      for (const c of this.optionChain) {
-        const qty = this.userOptions.get(c.id) ?? 0;
-        if (qty !== 0) {
-          const payout = qty * intrinsicValue(c.type, spot, c.strike) * CONTRACT_MULTIPLIER;
-          this.user.cash += payout;
-          this.optionsDealer.cash -= payout;
-          this.userOptionCashFlow += payout;
+      const intrinsic = new Map<number, number>();
+      for (const c of this.optionChain) intrinsic.set(c.id, intrinsicValue(c.type, spot, c.strike));
+      for (const [ownerId, pos] of this.optionPositions) {
+        const acct = this.accountOf(ownerId);
+        if (!acct) continue;
+        for (const [cid, qty] of pos) {
+          if (qty === 0) continue;
+          const payout = qty * (intrinsic.get(cid) ?? 0) * CONTRACT_MULTIPLIER;
+          acct.cash += payout; // holder is paid intrinsic
+          this.optionsDealer.cash -= payout; // written by the dealer
+          if (ownerId === 'user') this.userOptionCashFlow += payout;
         }
       }
       this.rollOptionChain();
@@ -705,12 +767,19 @@ export class SimulationEngine {
       }
     }
 
+    // Options speculators buy calls/puts by regime — building the open interest the
+    // dealer then hedges (so gamma squeezes emerge from real option demand).
+    this.runSpeculators();
+
     // Options dealer delta-hedge: rebalance its stock inventory to offset the public's
     // net option delta. As price moves, that target moves (gamma), so the dealer buys
     // rallies / sells dips when short gamma — a gamma squeeze that EMERGES from real
     // open interest and hits the same book as everyone else.
     if (this.optionsEnabled) {
-      const delta = this.optionHedgeTarget() - this.optionsDealer.shares;
+      // Ease toward the hedge target rather than snapping to it each tick — real dealers
+      // hedge gradually, and a full-delta rebalance every tick makes the gamma feedback
+      // violent enough to crash the price. HEDGE_RATE spreads it over ~5 ticks.
+      const delta = (this.optionHedgeTarget() - this.optionsDealer.shares) * OPTION_HEDGE_RATE;
       if (Math.abs(delta) >= MIN_ORDER) {
         for (const t of this.book.submitMarketOrder(delta > 0 ? 'buy' : 'sell', Math.abs(delta), 'optionsDealer', this.tick)) {
           this.settle(t, registry);

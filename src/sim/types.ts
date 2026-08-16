@@ -7,7 +7,8 @@ export type AgentType =
   | 'fomoHerd'
   | 'panicSeller'
   | 'trader'
-  | 'dealer';
+  | 'dealer'
+  | 'speculator';
 
 // Trader styles = a weighting over the [value, momentum, meanReversion, sentiment]
 // signals. Different styles = different kinds of people. 'Adaptive' starts balanced
@@ -154,6 +155,24 @@ export interface DealerAgent extends AgentAccount {
   stopLoss: number; // 0
 }
 
+/**
+ * Options speculator: expresses a directional view through OPTIONS instead of stock —
+ * buys calls in bullish regimes, puts in bearish ones (cash-limited, long-only). Its
+ * open interest is what the dealer must hedge, so a crowd of speculators is what makes
+ * gamma squeezes emerge on their own. Only active when the options market is enabled.
+ */
+export interface SpeculatorAgent extends AgentAccount {
+  id: string;
+  name: string;
+  type: 'speculator';
+  window: number; // lookback for the momentum part of its signal
+  conviction: number; // how strongly the signal must lean before it buys
+  budgetFrac: number; // max fraction of cash spent on premium per trade
+  activity: number;
+  takeProfit: number; // 0
+  stopLoss: number; // 0
+}
+
 /** Panic seller: capitulates on drawdown/fear, buys back the recovery (weak hands). */
 export interface PanicSellerAgent extends AgentAccount {
   id: string;
@@ -177,7 +196,8 @@ export type Agent =
   | WhaleAgent
   | PanicSellerAgent
   | TraderAgent
-  | DealerAgent;
+  | DealerAgent
+  | SpeculatorAgent;
 
 /** A record of one executed user order, for the order-history view. */
 export interface UserOrderRecord {

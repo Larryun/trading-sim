@@ -41,6 +41,7 @@ export const AGENT_TYPE_LABELS: Record<AgentType, string> = {
   panicSeller: 'Panic seller',
   trader: 'Trader',
   dealer: 'Options dealer',
+  speculator: 'Options speculator',
 };
 
 export const AGENT_TYPE_COLORS: Record<AgentType, string> = {
@@ -51,6 +52,7 @@ export const AGENT_TYPE_COLORS: Record<AgentType, string> = {
   panicSeller: '#ef4444',
   trader: '#22d3ee',
   dealer: '#eab308',
+  speculator: '#f472b6',
 };
 
 /**
@@ -180,6 +182,10 @@ export function createAgent(
       // Short gamma by default (the destabilizing case): hedges by buying rallies /
       // selling dips. Strike defaults to the current price (a "call wall" nearby).
       return { id, name, type, netGamma: -0.6, openInterest: 1500, strike: startingPrice, activity: 0.95, takeProfit: 0, stopLoss: 0, ...account };
+    case 'speculator':
+      // Expresses a directional view through options: buys calls when bullish, puts
+      // when bearish (handled in the engine — only when the options market is enabled).
+      return { id, name, type, window: 10, conviction: 0.3, budgetFrac: 0.07, activity: 0.4, takeProfit: 0, stopLoss: 0, ...account };
   }
 }
 
@@ -353,7 +359,18 @@ export function decideOrder(agent: Agent, market: MarketState): OrderIntent[] {
       if (Math.abs(hedge) < MIN_ORDER) return [];
       return [{ side: hedge > 0 ? 'buy' : 'sell', size: Math.abs(hedge) }];
     }
+    case 'speculator':
+      // Trades OPTIONS, not the stock — handled in the engine (needs the option chain).
+      return [];
   }
+}
+
+/** The speculator's directional signal (+bullish / −bearish), for its option choice. */
+export function speculatorSignal(agent: { window: number }, market: MarketState): number {
+  const clamp = (x: number) => Math.max(-1, Math.min(1, x));
+  const mom = clamp(pctChange(market.priceHistory, agent.window) * 50);
+  const sent = clamp(market.sentiment / 2);
+  return 0.5 * mom + 0.5 * sent;
 }
 
 export type Verdict = 'buy' | 'sell' | 'hold' | 'quote';
@@ -500,6 +517,23 @@ export function explainDecision(agent: Agent, market: MarketState): DecisionExpl
         detail: v === 'hold' ? 'Price flat — nothing to re-hedge.'
           : shortGamma ? `Short gamma: price ${dS > 0 ? 'rose' : 'fell'} → ${v}s in the SAME direction, accelerating the move.`
           : `Long gamma: price ${dS > 0 ? 'rose' : 'fell'} → ${v}s AGAINST the move, pinning toward the strike.`,
+      };
+    }
+    case 'speculator': {
+      const sig = speculatorSignal(agent, market);
+      const bull = sig > agent.conviction;
+      const bear = sig < -agent.conviction;
+      const v: Verdict = bull ? 'buy' : bear ? 'sell' : 'hold';
+      return {
+        rule: 'Expresses its view through OPTIONS — buys calls when bullish, puts when bearish (only when the options market is on). Its open interest is what dealers must hedge.',
+        signals: [
+          { label: 'Signal', value: sig.toFixed(2), lean: sig > 0.02 ? 1 : sig < -0.02 ? -1 : 0 },
+          { label: 'Bias', value: bull ? 'calls' : bear ? 'puts' : '—', lean: bull ? 1 : bear ? -1 : 0 },
+        ],
+        verdict: v,
+        detail: v === 'buy' ? 'Bullish → buying calls (long gamma for it, short gamma for the dealer).'
+          : v === 'sell' ? 'Bearish → buying puts.'
+          : 'View not strong enough — waits.',
       };
     }
   }

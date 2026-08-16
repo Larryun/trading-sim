@@ -40,6 +40,7 @@ export function OptionsView() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
             <Tile label="Spot" value={`$${spot.toFixed(2)}`} color={colors.up} />
             <Tile label="Ticks to expiry" value={sim.ticksToExpiry.toLocaleString()} />
+            <Tile label="Open interest" value={sim.optionChain.reduce((s, c) => s + c.openInterest, 0).toLocaleString()} title="Total contracts held across all participants (yours + speculators) — what the dealer must hedge" />
             <Tile label="Your option P&L" value={fmtMoney(sim.optionPnl)} color={sim.optionPnl >= 0 ? colors.up : colors.down} />
             <Tile label="Contract size" value="×100 shares" />
             <label style={{ ...panel, padding: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
