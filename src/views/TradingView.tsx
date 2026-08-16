@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { useSim } from '../SimContext';
-import { panel, pageWrap } from '../ui';
+import { panel, panelTight, pageWrap, colors, tabularNums, fmtMoney, pnlColor } from '../ui';
+import { Stat, Param, SectionHeaderRow } from '../components/kit';
 import { PriceChart } from '../components/PriceChart';
 import { CandleChart } from '../components/CandleChart';
 import { VolumeChart } from '../components/VolumeChart';
@@ -26,38 +28,48 @@ const toggleBtn = (active: boolean): React.CSSProperties => ({
 
 export function TradingView() {
   const sim = useSim();
+  const [showParams, setShowParams] = useState(false);
+
+  const spread = sim.bestBid != null && sim.bestAsk != null ? sim.bestAsk - sim.bestBid : null;
+  const userEquity = sim.user.cash + sim.user.shares * sim.currentPrice;
+  const userPnl = userEquity - sim.user.startingCapital;
+  const gapPct = sim.fundamentalValue > 0 ? ((sim.currentPrice - sim.fundamentalValue) / sim.fundamentalValue) * 100 : 0;
+  const halfLife = Math.round(Math.log(0.5) / Math.log(sim.sentimentDecay));
 
   return (
     <div style={pageWrap}>
-      {/* Simulation loop controls */}
-      <div style={{ ...panel, display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+      {/* Ticker strip — always-visible live snapshot */}
+      <div style={{ ...panelTight, display: 'flex', alignItems: 'center', gap: 22, marginBottom: 8, overflowX: 'auto' }}>
+        <Stat label="Price" value={`$${sim.currentPrice.toFixed(2)}`} color={colors.text} />
+        <Stat label="Fair (EPS×mult)" value={`$${sim.fundamentalValue.toFixed(2)}`} color={colors.accent} title="Fair value = EPS × valuation multiple" />
+        <Stat label="Px vs fair" value={`${gapPct >= 0 ? '+' : ''}${gapPct.toFixed(1)}%`} color={Math.abs(gapPct) < 5 ? colors.up : '#f59e0b'} />
+        <Stat label="Spread" value={spread != null ? `$${spread.toFixed(2)}` : '—'} />
+        <Stat label="Sentiment" value={sim.sentiment.toFixed(2)} color={pnlColor(sim.sentiment)} />
+        <Stat label="Tick" value={sim.tick.toLocaleString()} />
+        <div style={{ width: 1, alignSelf: 'stretch', background: colors.border }} />
+        <Stat label="Your equity" value={`$${Math.round(userEquity).toLocaleString()}`} />
+        <Stat label="Your P&L" value={fmtMoney(userPnl)} color={pnlColor(userPnl)} />
+      </div>
+
+      {/* Toolbar — run/pause + view controls + parameters toggle */}
+      <div style={{ ...panelTight, display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8, flexWrap: 'wrap' }}>
         <button
           onClick={() => sim.setRunning((r) => !r)}
-          style={{
-            padding: '8px 18px',
-            fontWeight: 600,
-            borderRadius: 6,
-            border: 'none',
-            cursor: 'pointer',
-            background: sim.running ? '#dc2626' : '#16a34a',
-            color: '#fff',
-          }}
+          style={{ padding: '7px 20px', fontWeight: 700, borderRadius: 6, border: 'none', cursor: 'pointer', background: sim.running ? colors.down : colors.up, color: '#fff' }}
         >
-          {sim.running ? 'Pause' : 'Run'}
+          {sim.running ? '⏸ Pause' : '▶ Run'}
         </button>
 
-        <label style={{ fontSize: 13, color: '#bbb', display: 'flex', alignItems: 'center', gap: 8 }} title="Delay between ticks — 0 = as fast as possible (render stays capped at ~15fps)">
+        <label style={{ fontSize: 12, color: colors.muted, display: 'flex', alignItems: 'center', gap: 8 }} title="Delay between ticks — 0 = as fast as possible">
           Speed
-          <input type="range" min={0} max={1000} step={10} value={sim.tickMs}
-            onChange={(e) => sim.setTickMs(Number(e.target.value))} />
-          <span style={{ width: 74, color: '#eee' }}>{sim.tickMs === 0 ? 'max' : `${sim.tickMs} ms`}</span>
+          <input type="range" min={0} max={1000} step={10} value={sim.tickMs} onChange={(e) => sim.setTickMs(Number(e.target.value))} />
+          <span style={{ ...tabularNums, width: 52, color: colors.text }}>{sim.tickMs === 0 ? 'max' : `${sim.tickMs}ms`}</span>
         </label>
 
-        <label style={{ fontSize: 13, color: '#bbb', display: 'flex', alignItems: 'center', gap: 8 }}>
-          Bar size
-          <input type="range" min={1} max={60} step={1} value={sim.barInterval}
-            onChange={(e) => sim.setBarInterval(Number(e.target.value))} />
-          <span style={{ width: 66, color: '#eee' }}>{sim.barInterval} ticks</span>
+        <label style={{ fontSize: 12, color: colors.muted, display: 'flex', alignItems: 'center', gap: 8 }}>
+          Bars
+          <input type="range" min={1} max={60} step={1} value={sim.barInterval} onChange={(e) => sim.setBarInterval(Number(e.target.value))} />
+          <span style={{ ...tabularNums, width: 44, color: colors.text }}>{sim.barInterval}t</span>
         </label>
 
         <div style={{ display: 'flex', gap: 6 }}>
@@ -65,39 +77,31 @@ export function TradingView() {
           <button style={toggleBtn(sim.chartType === 'line')} onClick={() => sim.setChartType('line')}>Line</button>
         </div>
 
-        <label style={{ fontSize: 13, color: '#bbb', display: 'flex', alignItems: 'center', gap: 8 }} title="Annual dividend yield, paid quarterly (fresh cash entering the market from the company)">
-          Dividend
-          <input type="range" min={0} max={6} step={0.5} value={sim.dividendYieldPct}
-            onChange={(e) => sim.setDividendYieldPct(Number(e.target.value))} />
-          <span style={{ width: 74, color: '#eee' }}>{sim.dividendYieldPct.toFixed(1)}%/yr</span>
-        </label>
+        <button style={toggleBtn(showParams)} onClick={() => setShowParams((s) => !s)}>Parameters {showParams ? '▲' : '▾'}</button>
 
-        <label style={{ fontSize: 13, color: '#bbb', display: 'flex', alignItems: 'center', gap: 8 }} title="Fee the taker pays per trade (goes to the broker, leaves the market)">
-          Fee
-          <input type="range" min={0} max={50} step={1} value={sim.feeBps}
-            onChange={(e) => sim.setFeeBps(Number(e.target.value))} />
-          <span style={{ width: 56, color: '#eee' }}>{sim.feeBps} bps</span>
-        </label>
-
-        <label style={{ fontSize: 13, color: '#bbb', display: 'flex', alignItems: 'center', gap: 8 }} title="How long the mood lingers: its half-life in ticks. Higher = regimes last longer. Stable across the whole range — the loop can't run away.">
-          Mood persistence
-          <input type="range" min={8} max={40} step={1}
-            value={Math.round(Math.log(0.5) / Math.log(sim.sentimentDecay))}
-            onChange={(e) => sim.setSentimentDecay(Math.pow(0.5, 1 / Number(e.target.value)))} />
-          <span style={{ width: 78, color: '#eee' }}>{Math.round(Math.log(0.5) / Math.log(sim.sentimentDecay))}t half-life</span>
-        </label>
-
-        <span style={{ fontSize: 11, color: '#777' }} title="Average compute time of one simulation tick">
+        <span style={{ ...tabularNums, marginLeft: 'auto', fontSize: 11, color: '#777' }} title="Average compute time of one simulation tick">
           {sim.stepMs.toFixed(2)} ms/tick
         </span>
+      </div>
 
-        <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
-          <div style={{ fontSize: 20, fontWeight: 700, color: '#4ade80' }}>${sim.currentPrice.toFixed(2)}</div>
-          <div style={{ fontSize: 11, color: '#22d3ee' }} title="Fair value = EPS × valuation multiple; moves with earnings reports and guidance (news)">
-            fair ${sim.fundamentalValue.toFixed(2)}
+      {/* Parameters drawer — grouped, aligned, collapsed by default */}
+      {showParams && (
+        <div style={{ ...panel, marginBottom: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 18 }}>
+          <div>
+            <SectionHeaderRow>Economics</SectionHeaderRow>
+            <div style={{ display: 'grid', gap: 8 }}>
+              <Param label="Dividend" min={0} max={6} step={0.5} value={sim.dividendYieldPct} onChange={sim.setDividendYieldPct} format={(v) => `${v.toFixed(1)}%/yr`} title="Annual dividend yield, paid quarterly (external cash into the market)" />
+              <Param label="Taker fee" min={0} max={50} step={1} value={sim.feeBps} onChange={sim.setFeeBps} format={(v) => `${v} bps`} title="Fee the aggressor pays per trade (leaves the market)" />
+            </div>
+          </div>
+          <div>
+            <SectionHeaderRow>Sentiment</SectionHeaderRow>
+            <div style={{ display: 'grid', gap: 8 }}>
+              <Param label="Mood persist" min={8} max={40} step={1} value={halfLife} onChange={(v) => sim.setSentimentDecay(Math.pow(0.5, 1 / v))} format={(v) => `${v}t ½-life`} title="How long the mood lingers (half-life in ticks). Stable across the whole range." />
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Share supply */}
       <div style={{ ...panel, marginBottom: 10 }}>

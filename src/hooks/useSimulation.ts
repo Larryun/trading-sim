@@ -221,6 +221,10 @@ export function useSimulation() {
     setFloatBreakdown(floatOf(engineRef.current));
   }, []);
 
+  // Bounded PnL sparkline series for an owner ('user' or an agent id). Read live from
+  // the engine at render time (re-renders happen on each tick flush).
+  const getPnlSpark = useCallback((id: string) => engineRef.current.getPnlSpark(id), []);
+
   const updateAgentParams = useCallback((id: string, patch: Record<string, unknown>) => {
     engineRef.current.updateAgentParams(id, patch);
     setAgents(engineRef.current.agents.map((a) => ({ ...a })));
@@ -270,6 +274,7 @@ export function useSimulation() {
     addAgent,
     removeAgent,
     updateAgentParams,
+    getPnlSpark,
     bars,
     volumeBars,
     sentimentSeries,

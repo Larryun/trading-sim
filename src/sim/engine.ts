@@ -21,6 +21,11 @@ const HISTORY_CAP = 8192;
 const STRATEGY_WINDOW = 256;
 const MAX_TRADES = 500;
 
+// Per-participant PnL sparkline: a small fixed-capacity ring sampled every few ticks,
+// so memory stays flat (≈ SPARK_CAP numbers per owner) no matter how long it runs.
+const SPARK_CAP = 48;
+const SPARK_INTERVAL = 5;
+
 // News arrives in lumpy bursts, not a constant drizzle: a low base rate, but an
 // event raises the odds of follow-ups for a while (clustering).
 const AUTO_NEWS_PROB = 0.008;
@@ -96,6 +101,8 @@ export class SimulationEngine {
   private nextUserOrderId = 1;
   agents: Agent[] = [];
   pendingUserOrders: PendingUserOrder[] = [];
+  // ownerId -> bounded ring of (equity − startingCapital) samples, for PnL sparklines.
+  private pnlSpark = new Map<string, RingBuffer>();
 
   // The user is a real account: sells are capped to shares held (no naked
   // shorting); buys are limited only by available liquidity/float.
@@ -244,6 +251,7 @@ export class SimulationEngine {
   removeAgent(id: string): void {
     this.book.cancelOrdersByOwner(id); // pull its resting quotes
     this.agents = this.agents.filter((a) => a.id !== id);
+    this.pnlSpark.delete(id); // free its sparkline ring
   }
 
   updateAgentParams(id: string, patch: Record<string, unknown>): void {
@@ -709,11 +717,29 @@ export class SimulationEngine {
     this.trades.push(...tickTrades);
     if (this.trades.length > MAX_TRADES) this.trades = this.trades.slice(-MAX_TRADES);
 
-    this.priceRing.push(this.book.getLastTradePrice());
+    const px = this.book.getLastTradePrice();
+    this.priceRing.push(px);
     this.buyVolRing.push(buyVol);
     this.sellVolRing.push(sellVol);
     this.sentimentRing.push(this.sentiment);
 
+    // Sample each participant's PnL into its bounded sparkline ring (every few ticks).
+    if (this.tick % SPARK_INTERVAL === 0) {
+      this.sampleSpark('user', this.user.cash + this.user.shares * px - this.user.startingCapital);
+      for (const a of this.agents) this.sampleSpark(a.id, a.cash + a.shares * px - a.startingCapital);
+    }
+
     return tickTrades;
+  }
+
+  private sampleSpark(id: string, pnl: number): void {
+    let ring = this.pnlSpark.get(id);
+    if (!ring) { ring = new RingBuffer(SPARK_CAP); this.pnlSpark.set(id, ring); }
+    ring.push(pnl);
+  }
+
+  /** Bounded PnL history (oldest→newest) for an owner, for a sparkline. */
+  getPnlSpark(id: string): number[] {
+    return this.pnlSpark.get(id)?.window(SPARK_CAP).data ?? [];
   }
 }
