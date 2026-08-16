@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useSim } from '../SimContext';
 import { colors, tabularNums, panel, pageWrap, fmtMoney } from '../ui';
-import { Tile, Th, Td, inputStyle } from '../components/kit';
+import { Tile, Th, Td, inputStyle, SectionHeaderRow } from '../components/kit';
+import { OpenInterestChart } from '../components/OpenInterestChart';
 
 export function OptionsView() {
   const sim = useSim();
@@ -19,6 +20,14 @@ export function OptionsView() {
   }, [sim.optionChain]);
 
   const spot = sim.currentPrice;
+  const oiRows = rows.map((r) => ({
+    strike: r.strike,
+    callOi: r.call?.openInterest ?? 0,
+    putOi: r.put?.openInterest ?? 0,
+    callGamma: r.call?.gamma ?? 0,
+    putGamma: r.put?.gamma ?? 0,
+  }));
+  const totalOi = oiRows.reduce((s, r) => s + r.callOi + r.putOi, 0);
 
   return (
     <div style={pageWrap}>
@@ -43,7 +52,6 @@ export function OptionsView() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
             <Tile label="Spot" value={`$${spot.toFixed(2)}`} color={colors.up} />
             <Tile label="Ticks to expiry" value={sim.ticksToExpiry.toLocaleString()} />
-            <Tile label="Open interest" value={sim.optionChain.reduce((s, c) => s + c.openInterest, 0).toLocaleString()} title="Total contracts held across all participants (yours + speculators) — what the dealer must hedge" />
             <Tile label="Your option P&L" value={fmtMoney(sim.optionPnl)} color={sim.optionPnl >= 0 ? colors.up : colors.down} />
             <Tile label="Implied vol" value={`${(sim.dealerState.impliedVol * 100).toFixed(0)}%`} title="Annualized vol used to price the chain — tracks recent realized volatility plus a risk premium" />
             <Tile label="Dealer hedge" value={`${Math.round(sim.dealerState.shares).toLocaleString()} sh`}
@@ -56,6 +64,14 @@ export function OptionsView() {
               <input type="number" min={1} value={qty} onChange={(e) => setQty(Math.max(1, Number(e.target.value)))}
                 style={{ ...inputStyle }} />
             </label>
+          </div>
+
+          {/* Open interest by strike — where dealer hedging pressure concentrates */}
+          <div style={{ ...panel, marginBottom: 12 }}>
+            <SectionHeaderRow right={<span style={{ ...tabularNums, fontSize: 10, color: colors.muted }}>total OI {totalOi.toLocaleString()} contracts</span>}>
+              Open interest by strike
+            </SectionHeaderRow>
+            <OpenInterestChart rows={oiRows} spot={spot} />
           </div>
 
           <div style={{ ...panel, overflowX: 'auto' }}>
