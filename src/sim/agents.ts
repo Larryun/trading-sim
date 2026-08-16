@@ -343,16 +343,14 @@ export function explainDecision(agent: Agent, market: MarketState): DecisionExpl
       const score = sig.reduce((s, v, i) => s + (agent.weights[i] ?? 0) * v, 0);
       const v: Verdict = Math.abs(score) <= 0.05 ? 'hold' : score > 0 ? 'buy' : 'sell';
       const learns = agent.learningRate > 0;
-      // Color by this signal's CONTRIBUTION (weight × signal) — i.e. which way it pushes
-      // THIS trader — not the raw signal, so a fader (negative weight) reads correctly.
-      const signals: DecisionSignal[] = agent.weights.map((w, i) => {
-        const contrib = w * sig[i];
-        return {
-          label: `${SIGNAL_NAMES[i]} weight`,
-          value: `${w >= 0 ? '+' : ''}${(w * 100).toFixed(0)}%`,
-          lean: contrib > 0.005 ? 1 : contrib < -0.005 ? -1 : 0,
-        };
-      });
+      // Color each weight by its SIGN (the fixed personality): green = trades this
+      // signal with the trend, red = fades it. Static unless the trader is learning,
+      // so the color stops flickering with every tick's market move.
+      const signals: DecisionSignal[] = agent.weights.map((w, i) => ({
+        label: `${SIGNAL_NAMES[i]} weight`,
+        value: `${w >= 0 ? '+' : ''}${(w * 100).toFixed(0)}%`,
+        lean: w > 0.005 ? 1 : w < -0.005 ? -1 : 0,
+      }));
       signals.push({ label: 'Blended score', value: score.toFixed(2), lean: score > 0 ? 1 : score < 0 ? -1 : 0 });
       const styleName = TRADER_STYLES[agent.style].label;
       return {
