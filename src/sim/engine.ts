@@ -13,7 +13,10 @@ const STARTING_PRICE = 100;
 const MIN_ORDER = 0.01;
 const USER_STARTING_CASH = 10000;
 
-const HISTORY_CAP = 4096;
+// Must cover the largest chart window: MAX_DISPLAY_BARS (120) × max bar size (60
+// ticks) = 7200 samples. Sized above that so the 120-bar window fills and scrolls
+// correctly even at the coarsest bar size (otherwise the oldest candle can't drop).
+const HISTORY_CAP = 8192;
 const STRATEGY_WINDOW = 256;
 const MAX_TRADES = 500;
 
