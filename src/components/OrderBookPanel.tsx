@@ -1,63 +1,30 @@
 import type { BookLevel } from '../sim/orderBook';
 import { SectionHeaderRow } from './kit';
-import { colors, mono, tabularNums } from '../ui';
+import { DepthChart } from './DepthChart';
+import { colors, tabularNums } from '../ui';
 
 interface Props {
   bids: BookLevel[];
   asks: BookLevel[];
 }
 
-const USER = colors.user;
-
 export function OrderBookPanel({ bids, asks }: Props) {
-  // Max size across shown levels, to scale the depth bars.
-  const maxSize = Math.max(1, ...bids.map((l) => l.size), ...asks.map((l) => l.size));
-  const spread = bids[0] && asks[0] ? asks[0].price - bids[0].price : null;
+  const bestBid = bids[0]?.price;
+  const bestAsk = asks[0]?.price;
+  const spread = bestBid != null && bestAsk != null ? bestAsk - bestBid : null;
 
   return (
     <div>
-      <SectionHeaderRow right={<span style={{ fontSize: 10, color: USER }}>◆ your size</span>}>Order Book</SectionHeaderRow>
-      <div style={{ fontFamily: mono, fontSize: 11 }}>
-        <Header />
-        {/* asks: show worst-to-best so the best ask sits just above the spread */}
-        {[...asks].reverse().map((l) => (
-          <Level key={`a${l.price}`} level={l} side="sell" maxSize={maxSize} />
-        ))}
-        <div style={{ ...tabularNums, textAlign: 'center', color: colors.muted, padding: '3px 0', borderBlock: `1px solid ${colors.border}` }}>
-          spread {spread != null ? `$${spread.toFixed(2)}` : '—'}
-        </div>
-        {bids.map((l) => (
-          <Level key={`b${l.price}`} level={l} side="buy" maxSize={maxSize} />
-        ))}
-        {bids.length === 0 && asks.length === 0 && <div style={{ color: colors.muted, padding: 8 }}>Book is empty.</div>}
-      </div>
-    </div>
-  );
-}
-
-function Header() {
-  return (
-    <div style={{ display: 'flex', padding: '2px 6px', color: colors.muted }}>
-      <span style={{ width: 70 }}>price</span>
-      <span style={{ width: 60, textAlign: 'right' }}>size</span>
-      <span style={{ flex: 1 }} />
-    </div>
-  );
-}
-
-function Level({ level, side, maxSize }: { level: BookLevel; side: 'buy' | 'sell'; maxSize: number }) {
-  const color = side === 'buy' ? colors.up : colors.down;
-  const barPct = (level.size / maxSize) * 100;
-  const hasUser = level.userSize > 1e-6;
-  return (
-    <div style={{ position: 'relative', display: 'flex', alignItems: 'center', padding: '2px 6px' }}>
-      {/* depth bar */}
-      <div style={{ position: 'absolute', right: 0, top: 1, bottom: 1, width: `${barPct}%`, background: `${color}22`, borderRadius: 3 }} />
-      <span style={{ width: 70, color, zIndex: 1 }}>${level.price.toFixed(2)}</span>
-      <span style={{ width: 60, textAlign: 'right', color: colors.text, zIndex: 1 }}>{level.size.toFixed(0)}</span>
-      <span style={{ flex: 1, textAlign: 'right', zIndex: 1, color: USER }}>
-        {hasUser ? `◆ ${level.userSize.toFixed(0)}` : ''}
-      </span>
+      <SectionHeaderRow
+        right={
+          <span style={{ ...tabularNums, fontSize: 10, color: colors.muted }}>
+            <span style={{ color: colors.up }}>{bestBid != null ? `$${bestBid.toFixed(2)}` : '—'}</span>
+            {' · '}spread {spread != null ? `$${spread.toFixed(2)}` : '—'}{' · '}
+            <span style={{ color: colors.down }}>{bestAsk != null ? `$${bestAsk.toFixed(2)}` : '—'}</span>
+          </span>
+        }
+      >Market Depth</SectionHeaderRow>
+      <DepthChart bids={bids} asks={asks} />
     </div>
   );
 }
