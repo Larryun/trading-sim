@@ -95,6 +95,14 @@ const SENTIMENT_FEAR_ASYMMETRY = 1.6; // downside moves move the FAST mood more 
 const SENTIMENT_CAP = 3; // bound so the reflexive loop can't run away
 const REFLEX_MOOD_DECAY = 0.85; // fast component leaks quickly (~4-tick half-life) so it's texture, not regime
 
+// DYNAMIC RISK APPETITE. No real desk trades a constant size: risk is cut as losses
+// accumulate and restored as equity recovers. So every agent's order size is scaled by a
+// live risk factor derived from its own drawdown from peak equity — a static "size" slider
+// is a knob for its FULL-risk behaviour, not a constant. This is pro-cyclical on purpose:
+// collective de-risking into a selloff is exactly how real drawdowns feed on themselves.
+const RISK_DD_SENSITIVITY = 1.5; // how sharply risk is cut per unit of drawdown
+const RISK_FLOOR = 0.3; // never de-risk below this fraction of full size
+
 // Dividends inject cash into the market from OUTSIDE the trading system (the
 // company paying shareholders), so the market isn't a closed, zero-sum cash pool.
 // Dividends are paid QUARTERLY (aligned to the earnings cadence), like real companies.
@@ -123,6 +131,8 @@ export class SimulationEngine {
   pendingUserOrders: PendingUserOrder[] = [];
   // ownerId -> bounded ring of (equity − startingCapital) samples, for PnL sparklines.
   private pnlSpark = new Map<string, RingBuffer>();
+  // ownerId -> peak equity, for the dynamic risk-appetite (drawdown de-risking) factor.
+  private peakEquity = new Map<string, number>();
 
   // The user is a real account. Buys are cash-limited. Sells are capped to shares
   // held UNLESS shorting is enabled, in which case a cash-collateralized short is
@@ -323,6 +333,7 @@ export class SimulationEngine {
     this.optionPositions.delete(id);
     this.agents = this.agents.filter((a) => a.id !== id);
     this.pnlSpark.delete(id); // free its sparkline ring
+    this.peakEquity.delete(id);
   }
 
   updateAgentParams(id: string, patch: Record<string, unknown>): void {
@@ -1015,8 +1026,9 @@ export class SimulationEngine {
       let availShares = agent.shares;
       const maxShort = CAN_SHORT.has(agent.type) && px > 0 ? (SHORT_COLLATERAL * agent.cash) / px : 0;
 
+      const risk = this.riskScale(agent, px); // de-risked after losses, restored on recovery
       for (const intent of intents) {
-        let size = intent.size;
+        let size = intent.size * risk;
         if (intent.side === 'buy') {
           if (intent.limitPrice != null) {
             size = Math.min(size, intent.limitPrice > 0 ? availCash / (intent.limitPrice * (1 + this.feeBps / 10000)) : 0);
@@ -1167,6 +1179,19 @@ export class SimulationEngine {
     let ring = this.pnlSpark.get(id);
     if (!ring) { ring = new RingBuffer(SPARK_CAP); this.pnlSpark.set(id, ring); }
     ring.push(pnl);
+  }
+
+  /**
+   * Live risk appetite in (RISK_FLOOR, 1]: 1 at a fresh equity high, falling as the agent
+   * draws down. Multiplies every order size, so a losing agent trades smaller — and
+   * recovers its size as equity recovers.
+   */
+  riskScale(agent: Agent, px = this.currentPrice): number {
+    const eq = agent.cash + agent.shares * px;
+    const peak = Math.max(this.peakEquity.get(agent.id) ?? eq, eq);
+    this.peakEquity.set(agent.id, peak);
+    const dd = peak > 0 ? Math.max(0, 1 - eq / peak) : 0;
+    return Math.max(RISK_FLOOR, 1 - dd * RISK_DD_SENSITIVITY);
   }
 
   /** Bounded PnL history (oldest→newest) for an owner, for a sparkline. */

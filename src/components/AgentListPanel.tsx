@@ -11,6 +11,7 @@ interface Props {
   removeAgent: (id: string) => void;
   updateAgentParams: (id: string, patch: Record<string, unknown>) => void;
   getPnlSpark: (id: string) => number[];
+  getRiskScale: (a: Agent) => number;
 }
 
 const AGENT_TYPES: AgentType[] = ['noise', 'marketMaker', 'fomoHerd', 'whale', 'panicSeller', 'trader', 'dealer', 'speculator', 'indexFund'];
@@ -64,7 +65,7 @@ const PARAM_HELP: Record<string, string> = {
 const GRID = '1fr 54px 64px 66px 40px 62px 44px'; // name | sh | equity | P&L | tr | spark | actions
 const inputStyle: React.CSSProperties = { background: colors.bg0, color: colors.text, border: `1px solid ${colors.border}`, borderRadius: 6, padding: '5px 7px', fontSize: 12 };
 
-export function AgentListPanel({ agents, currentPrice, addAgent, removeAgent, updateAgentParams, getPnlSpark }: Props) {
+export function AgentListPanel({ agents, currentPrice, addAgent, removeAgent, updateAgentParams, getPnlSpark, getRiskScale }: Props) {
   const [newType, setNewType] = useState<AgentType>('noise');
   const [newStyle, setNewStyle] = useState<TraderStyle>('value');
   const [capital, setCapital] = useState(20000);
@@ -123,6 +124,7 @@ export function AgentListPanel({ agents, currentPrice, addAgent, removeAgent, up
                 agent={agent}
                 currentPrice={currentPrice}
                 spark={getPnlSpark(agent.id)}
+                riskScale={getRiskScale(agent)}
                 expanded={expanded === agent.id}
                 onToggle={() => setExpanded((e) => (e === agent.id ? null : agent.id))}
                 onRemove={() => removeAgent(agent.id)}
@@ -136,8 +138,8 @@ export function AgentListPanel({ agents, currentPrice, addAgent, removeAgent, up
   );
 }
 
-function AgentRow({ agent, currentPrice, spark, expanded, onToggle, onRemove, onUpdate }: {
-  agent: Agent; currentPrice: number; spark: number[]; expanded: boolean;
+function AgentRow({ agent, currentPrice, spark, riskScale, expanded, onToggle, onRemove, onUpdate }: {
+  agent: Agent; currentPrice: number; spark: number[]; riskScale: number; expanded: boolean;
   onToggle: () => void; onRemove: () => void; onUpdate: (patch: Record<string, unknown>) => void;
 }) {
   const equity = agent.cash + agent.shares * currentPrice;
@@ -161,6 +163,15 @@ function AgentRow({ agent, currentPrice, spark, expanded, onToggle, onRemove, on
       </div>
       {expanded && (
         <div style={{ padding: '8px 10px', background: colors.bg0, borderTop: `1px solid ${colors.bg2}`, borderRadius: 4 }}>
+          {/* Live, derived value — not a slider: every order size is scaled by this. */}
+          <div style={{ fontSize: 11, color: colors.muted, marginBottom: 8, display: 'flex', justifyContent: 'space-between', ...tabularNums }}>
+            <span className="param-tip" data-tip="Dynamic risk appetite: order sizes are scaled by this. It falls as the agent draws down from its peak equity and recovers as equity recovers — real desks cut risk after losses.">
+              Risk appetite (live)
+            </span>
+            <span style={{ color: riskScale > 0.85 ? colors.up : riskScale > 0.5 ? colors.warn : colors.down }}>
+              {(riskScale * 100).toFixed(0)}% of full size
+            </span>
+          </div>
           <AgentParams agent={agent} onUpdate={onUpdate} />
         </div>
       )}

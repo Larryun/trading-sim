@@ -278,14 +278,14 @@ into existence.
   stock: buys **calls** in bullish regimes, **puts** in bearish ones (long-only,
   cash-limited), holding to expiry. *Emergent effect:* its **open interest** is what the
   dealer must hedge, so a crowd of speculators makes **gamma squeezes/crashes emerge on
-  their own** — without you touching the chain. (See section 11; the options market is on
+  their own** — without you touching the chain. (See section 12; the options market is on
   by default.) Note it never asks whether an option is *cheap* — like real retail option
   buyers it pays the variance risk premium, so it loses on average.
 
 - **Gamma squeeze (test)** — a **test harness, not a market participant.** It simulates a
   large options book and delta-hedges it aggressively (`Δhedge ≈ −gamma × Δprice`) so the
   mechanism is obvious. Don't confuse it with the *real* dealer of the options market
-  (section 11), which is built in, arises from actual open interest, and is deliberately
+  (section 12), which is built in, arises from actual open interest, and is deliberately
   bounded. Use this one to **stress-test** the effect: **negative gamma** (the default)
   makes it buy rallies and sell dips, amplifying moves — about **3× volatility** at the
   default settings, and it chains with the short buy-in cascade below. **Positive gamma**
@@ -480,7 +480,24 @@ Change who's in the room, and you change the market's entire personality.
 
 ---
 
-## 11. Options, Delta-Hedging & the Gamma Squeeze
+## 11. Risk Appetite Is Dynamic (De-risking)
+
+No real participant trades a constant size. Risk is **cut after losses** and restored as
+equity recovers, so the sliders you set are a description of an agent's *full-risk*
+behaviour, not a constant.
+
+Every agent carries a live **risk appetite** in (0.3, 1]: 1 at a fresh equity high, falling
+as it draws down from that peak. Every order size is multiplied by it, so a losing agent
+automatically trades smaller. You can watch it change under the ⚙ of any agent.
+
+The important consequence is that this is **pro-cyclical**, exactly as in reality: a
+selloff causes losses, losses cause de-risking, de-risking removes demand, which deepens
+the selloff. It is one of the mechanisms that turns an ordinary decline into a
+disorderly one, and it measurably raises volatility in the sim.
+
+---
+
+## 12. Options, Delta-Hedging & the Gamma Squeeze
 
 The **Options** tab is a real, live options market (on by default), and it exists to
 teach one of the biggest forces in modern markets: **derivatives moving the underlying**.

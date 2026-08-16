@@ -272,6 +272,9 @@ export function useSimulation() {
   // the engine at render time (re-renders happen on each tick flush).
   const getPnlSpark = useCallback((id: string) => engineRef.current.getPnlSpark(id), []);
 
+  // Live risk appetite (1 = full size at an equity high, lower after a drawdown).
+  const getRiskScale = useCallback((a: Agent) => engineRef.current.riskScale(a), []);
+
   const updateAgentParams = useCallback((id: string, patch: Record<string, unknown>) => {
     engineRef.current.updateAgentParams(id, patch);
     setAgents(engineRef.current.agents.map((a) => ({ ...a })));
@@ -327,6 +330,7 @@ export function useSimulation() {
     removeAgent,
     updateAgentParams,
     getPnlSpark,
+    getRiskScale,
     bars,
     volumeBars,
     sentimentSeries,
