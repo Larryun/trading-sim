@@ -271,19 +271,26 @@ export function decideOrder(agent: Agent, market: MarketState): OrderIntent[] {
       return size > 0 ? [{ side: 'buy', size }] : [];
     }
     case 'whale': {
-      // Execute a large program in low-impact slices; mandate sign sets direction.
+      // Execute a large program in low-impact slices. The whale AUTO-CYCLES: it
+      // accumulates up to targetShares, then distributes back down to zero, then
+      // repeats — a fund rotating a position — so it both buys and sells over time
+      // instead of running one one-way program and going dormant. `mandate` is the
+      // current phase (+1 accumulate, -1 distribute); it flips at each boundary.
+      if (agent.mandate >= 0 && agent.shares >= agent.targetShares - MIN_ORDER) agent.mandate = -1;
+      else if (agent.mandate < 0 && agent.shares <= MIN_ORDER) agent.mandate = 1;
+
       const jitter = 1 + (Math.random() * 2 - 1) * agent.participationJitter;
       const r = pctChange(market.priceHistory, 5); // recent move as an impact proxy
       if (agent.mandate >= 0) {
         const remaining = agent.targetShares - agent.shares;
-        if (remaining < MIN_ORDER) return []; // program complete -> dormant
-        if (r > agent.impactBudget && Math.random() < 0.7) return []; // ran up hard -> throttle
+        if (remaining < MIN_ORDER) return [];
+        if (r > agent.impactBudget && Math.random() < 0.7) return []; // ran up hard -> throttle buying
         const size = Math.min(agent.sliceSize * jitter, remaining);
         return size > 0 ? [{ side: 'buy', size }] : [];
       }
-      const excess = agent.shares - agent.targetShares;
+      const excess = agent.shares; // distribute the whole position back down to zero
       if (excess < MIN_ORDER) return [];
-      if (r < -agent.impactBudget && Math.random() < 0.7) return []; // falling hard -> back off
+      if (r < -agent.impactBudget && Math.random() < 0.7) return []; // falling hard -> back off selling
       const size = Math.min(agent.sliceSize * jitter, excess);
       return size > 0 ? [{ side: 'sell', size }] : [];
     }
@@ -389,18 +396,20 @@ export function explainDecision(agent: Agent, market: MarketState): DecisionExpl
       };
     }
     case 'whale': {
-      const acc = agent.mandate >= 0;
-      const remaining = acc ? agent.targetShares - agent.shares : agent.shares - agent.targetShares;
+      // Mirror the auto-cycle: accumulate up to target, then distribute down to zero.
+      const acc = !(agent.mandate >= 0 && agent.shares >= agent.targetShares - 0.01)
+        && (agent.mandate >= 0 || agent.shares <= 0.01);
+      const remaining = acc ? agent.targetShares - agent.shares : agent.shares;
       const v: Verdict = remaining > 0.01 ? (acc ? 'buy' : 'sell') : 'hold';
       return {
-        rule: `A large institution working an ${acc ? 'accumulate' : 'distribute'} program in small slices.`,
+        rule: 'A large institution rotating a position — accumulates up to its target, then distributes back down, in small slices.',
         signals: [
           { label: 'Holds', value: agent.shares.toFixed(0), lean: 0 },
           { label: 'Target', value: agent.targetShares.toFixed(0), lean: 0 },
-          { label: 'Remaining', value: remaining.toFixed(0), lean: v === 'buy' ? 1 : v === 'sell' ? -1 : 0 },
+          { label: 'Phase', value: acc ? 'accumulating' : 'distributing', lean: v === 'buy' ? 1 : v === 'sell' ? -1 : 0 },
         ],
         verdict: v,
-        detail: v === 'hold' ? 'Program complete — dormant.' : `${acc ? 'Buying' : 'Selling'} ~${agent.sliceSize} sh/tick toward its target, backing off when its own impact is high.`,
+        detail: v === 'hold' ? 'Between phases.' : `${acc ? `Buying toward ${agent.targetShares.toFixed(0)} sh` : 'Selling back down to 0'} at ~${agent.sliceSize} sh/tick, backing off when its own impact is high.`,
       };
     }
     case 'panicSeller': {
