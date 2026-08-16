@@ -25,12 +25,13 @@ const MAX_TRADES = 500;
 const AUTO_NEWS_PROB = 0.008;
 const NEWS_CLUSTER_TICKS = 30; // window over which follow-up news is more likely
 const NEWS_CLUSTER_BOOST = 5; // how much more likely follow-ups are inside a cluster
-// The market sits in a sustained bull or bear REGIME that only occasionally flips —
-// this is what gives lasting mood periods (real bull/bear markets) instead of noise.
-const REGIME_SWITCH_PROB = 0.0025; // per-tick chance the bull/bear regime flips (~400-tick regimes)
-const REGIME_EASE = 0.02; // how fast the smoothed regime eases toward the current bull/bear state
-const NEWS_REGIME_BIAS = 0.45; // how strongly the regime tilts news direction (0..0.5)
-const NEWS_REGIME_LEVEL = 2.2; // how much the regime sets a persistent sentiment baseline (dominates fast noise)
+// The market mood drifts on a slow, PERSISTENT tide (a continuous bull/bear bias that
+// wanders slowly and lingers on one side for a long time) — long smooth regimes with
+// nuanced values, not a binary happy/sad square wave and not fast noise.
+const NEWS_REGIME_DECAY = 0.9995; // very slow mean reversion → long one-sided excursions (regimes last)
+const NEWS_REGIME_STEP = 0.02; // random-walk step of the tide (how far it swings)
+const NEWS_REGIME_BIAS = 0.45; // how strongly the tide tilts news direction (0..0.5)
+const NEWS_REGIME_LEVEL = 1.5; // how much the tide biases sentiment (moderate → lasting but not binary)
 // A news event's fundamental repricing DIFFUSES in over time rather than jumping,
 // so the market shows realistic post-news drift as the information propagates.
 const FUNDAMENTAL_DIFFUSION = 0.06;
@@ -40,6 +41,7 @@ const FUNDAMENTAL_DIFFUSION = 0.06;
 // a random beat/miss surprise; news = changes to earnings expectations (guidance).
 const EARNINGS_PERIOD = 200; // ticks between earnings reports (a "quarter")
 const EARNINGS_GROWTH = 0.002; // baseline earnings growth booked each report (gentle secular drift)
+const CONSENSUS_EASE = 0.006; // how fast the market's expected-EPS drifts toward the anticipated next report
 const EARNINGS_SURPRISE = 0.02; // max random beat/miss per report (±) — kept modest so the fixed-float,
                                 // long-biased agent pool can still track fair value (it can't chase a runaway)
 const VALUATION_MULTIPLE = 20; // price/earnings multiple applied to EPS to get fair value
@@ -54,7 +56,7 @@ const MAINT_MARGIN = 0.25; // margin call when equity falls below this * short e
 // price action (reflexivity), wobbles randomly, spikes harder on the way down
 // (fear), and gets jumpier when already excited (volatility clustering).
 const SENTIMENT_REFLEX_WINDOW = 12; // ticks of price action the mood reads (longer = smoother)
-const SENTIMENT_MOOD_NOISE = 0.004; // small random wobble (kept low so the regime shows through, not noise)
+const SENTIMENT_MOOD_NOISE = 0.003; // small random wobble (kept low so the regime shows through, not noise)
 const SENTIMENT_FEAR_ASYMMETRY = 1.6; // downside moves move the FAST mood more than up
 const SENTIMENT_CAP = 3; // bound so the reflexive loop can't run away
 const REFLEX_MOOD_DECAY = 0.85; // fast component leaks quickly (~4-tick half-life) so it's texture, not regime
@@ -105,20 +107,20 @@ export class SimulationEngine {
   // Persistence of the NEWS regime = pure leak toward neutral, set by a HALF-LIFE
   // (ticks) so the knob is stable across its whole range: decay = 0.5^(1/H). Default 20.
   sentimentDecay = Math.pow(0.5, 1 / 20); // ≈ 0.966 (~20-tick half-life)
-  sentimentReflexivity = 1.5; // loop gain: how strongly the recent trend feeds the FAST mood (lower = regime shows through)
+  sentimentReflexivity = 1.2; // loop gain: how strongly the recent trend feeds the FAST mood (lower = regime shows through)
   fundamentalValue = STARTING_PRICE; // the "true" value; eases toward the target (post-news drift)
   // Fair value is derived from earnings: target = EPS × multiple. EPS starts so the
   // target equals the starting price; news and earnings reports move EPS, not the
   // target directly (so fair value is computed, not hand-nudged).
   valuationMultiple = VALUATION_MULTIPLE;
   eps = STARTING_PRICE / VALUATION_MULTIPLE; // earnings per share (per quarter)
+  consensusEps = STARTING_PRICE / VALUATION_MULTIPLE; // the market's EXPECTED EPS ("priced-in"); surprises are measured vs this
   /** Fair value the price diffuses toward = earnings capitalized at the multiple. */
   get fundamentalTarget(): number {
     return this.eps * this.valuationMultiple;
   }
   private newsClusterTicks = 0; // ticks remaining in the current news cluster
-  private marketRegime = 1; // discrete bull (+1) / bear (-1) state; flips only occasionally
-  private newsRegime = 0; // smoothed regime in [-1,1] (eases toward marketRegime) — the bull/bear tide
+  private newsRegime = 0; // slow continuous bull/bear tide in ~[-1,1] (persistent, not binary)
   // Tuned low so news (via earnings expectations) stays within reach of the long-only
   // agent pool in BOTH directions (they can't short to chase a crashed fair).
   fundamentalImpact = 0.003; // tiny: news barely moves EPS (earnings reports are the real fair-value driver)
@@ -356,29 +358,35 @@ export class SimulationEngine {
       }
     }
 
-    // Quarterly earnings report: the objective driver of fair value. Earnings grow a
-    // baseline amount plus a random beat/miss surprise; the surprise also moves the
-    // mood (a beat is bullish) and is logged as a news event.
+    // The market's expected EPS drifts toward the anticipated next report, so growth
+    // gets "priced in" ahead of time — an in-line result is then a non-event.
+    this.consensusEps += (this.eps * (1 + EARNINGS_GROWTH) - this.consensusEps) * CONSENSUS_EASE;
+
+    // Quarterly earnings report. What moves the mood is the SURPRISE vs expectations
+    // (beat/miss relative to consensus), not the raw number — so a big beat that the
+    // market already priced in barely moves it ("buy the rumor, sell the news").
     if (this.tick % EARNINGS_PERIOD === 0) {
-      const surprise = (Math.random() * 2 - 1) * EARNINGS_SURPRISE;
-      this.eps = Math.max(0.01, this.eps * (1 + EARNINGS_GROWTH + surprise));
-      const mood = surprise * 40; // beat → bullish regime, miss → bearish
+      const innovation = (Math.random() * 2 - 1) * EARNINGS_SURPRISE;
+      const newEps = Math.max(0.01, this.eps * (1 + EARNINGS_GROWTH + innovation));
+      const surprise = this.consensusEps > 0 ? (newEps - this.consensusEps) / this.consensusEps : 0; // vs expectations
+      this.eps = newEps;
+      this.consensusEps = newEps; // expectations reset to the freshly reported number
+      const mood = surprise * 60; // beat vs estimates → bullish, miss → bearish
       this.newsMood += mood;
       this.events.push({
         id: this.nextEventId++,
         tick: this.tick,
-        headline: surprise >= 0 ? `Earnings beat (+${(surprise * 100).toFixed(1)}%)` : `Earnings miss (${(surprise * 100).toFixed(1)}%)`,
+        headline: surprise >= 0 ? `Earnings beat estimates (+${(surprise * 100).toFixed(1)}%)` : `Earnings miss estimates (${(surprise * 100).toFixed(1)}%)`,
         sentiment: mood,
       });
       if (this.events.length > 100) this.events = this.events.slice(-100);
       this.newsClusterTicks = NEWS_CLUSTER_TICKS;
     }
 
-    // The market sits in a bull/bear regime that only occasionally flips, then eases
-    // in — so the mood tide (and news direction) stays one side for a sustained period
-    // instead of flickering. This is what makes sentiment show lasting regimes.
-    if (Math.random() < REGIME_SWITCH_PROB) this.marketRegime = -this.marketRegime;
-    this.newsRegime += (this.marketRegime - this.newsRegime) * REGIME_EASE;
+    // The slow mood tide wanders continuously and lingers on one side for a long time
+    // (a persistent AR(1)), giving lasting-but-nuanced bull/bear regimes rather than a
+    // binary flip or fast noise. It also gently tilts news direction (below).
+    this.newsRegime = Math.max(-1.2, Math.min(1.2, this.newsRegime * NEWS_REGIME_DECAY + (Math.random() * 2 - 1) * NEWS_REGIME_STEP));
 
     // Auto-news arrives in lumpy bursts: a low base rate, boosted while a cluster
     // is active. Direction is tilted by the current regime, so good times keep
@@ -451,7 +459,7 @@ export class SimulationEngine {
         const equity = agent.cash + agent.shares * px;
         if (equity < MAINT_MARGIN * exposure) {
           this.book.cancelOrdersByOwner(agent.id);
-          const cover = Math.max(MIN_ORDER, -agent.shares * 0.5);
+          const cover = -agent.shares; // full buy-in (liquidate the short, not half)
           for (const t of this.book.submitMarketOrder('buy', cover, agent.id, this.tick)) {
             this.settle(t, registry);
             tickTrades.push(t);
