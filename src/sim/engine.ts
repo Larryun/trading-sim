@@ -86,8 +86,31 @@ const OPTION_MAX_OI_FRACTION = 0.15;
 // Market makers ARE included: a maker targeting FLAT inventory must be able to go short to
 // keep an offer up, exactly as real makers do.
 const CAN_SHORT = new Set<AgentType>(['trader', 'dealer', 'marketMaker']);
-const SHORT_COLLATERAL = 1; // may short up to this * cash worth of shares
+const SHORT_COLLATERAL = 1; // short exposure may reach this * EQUITY (not cash — see below)
 const MAINT_MARGIN = 0.25; // margin call when equity falls below this * short exposure
+
+/**
+ * How much MORE the account may sell short, in shares.
+ *
+ * Sized against EQUITY, never against cash. A short sale PAYS you the proceeds, so cash
+ * jumps every time you short; sizing the next short off that inflated cash lets each short
+ * finance the next one and short capacity compounds without limit (1k -> 2.1k -> 3.2k -> ...).
+ * Equity doesn't move when you short (cash up, shares negative by the same value), so it is
+ * the only stable base. Real brokers work this way too: short-sale proceeds are RESTRICTED
+ * collateral for the buy-back, not spendable buying power.
+ */
+function shortCapacity(account: { cash: number; shares: number }, price: number): number {
+  if (price <= 0) return 0;
+  const equity = account.cash + account.shares * price;
+  const exposure = Math.max(0, -account.shares) * price;
+  return Math.max(0, (SHORT_COLLATERAL * equity - exposure) / price);
+}
+
+/** Cash actually spendable on a BUY: short proceeds sitting in cash are collateral, not funds. */
+function freeBuyingPower(account: { cash: number; shares: number }, price: number): number {
+  const equity = account.cash + account.shares * price;
+  return Math.max(0, Math.min(account.cash, equity));
+}
 // Sentiment realism: beyond discrete news jumps, the "mood" also reacts to recent
 // price action (reflexivity), wobbles randomly, spikes harder on the way down
 // (fear), and gets jumpier when already excited (volatility clustering).
@@ -266,8 +289,8 @@ export class SimulationEngine {
       equity,
       maintenanceReq: MAINT_MARGIN * exposure,
       marginCall: shortShares > 0 && equity < MAINT_MARGIN * exposure,
-      buyingPower: Math.max(0, this.user.cash),
-      shortCapacity: this.userCanShort && p > 0 ? (SHORT_COLLATERAL * this.user.cash) / p : 0,
+      buyingPower: freeBuyingPower(this.user, p),
+      shortCapacity: this.userCanShort ? shortCapacity(this.user, p) : 0,
     };
   }
 
@@ -787,12 +810,13 @@ export class SimulationEngine {
     }
     // Reserve what the user's RESTING orders have already committed, so several orders
     // can't each spend the same cash / sell the same shares.
-    const freeCash = Math.max(0, this.user.cash - this.book.restingBuyNotional('user'));
+    // Buying power, not raw cash: while short, part of `cash` is restricted short proceeds.
+    const freeCash = Math.max(0, freeBuyingPower(this.user, px) - this.book.restingBuyNotional('user'));
     const freeShares = this.user.shares - this.book.restingSellSize('user');
     let size = requested;
     if (uo.side === 'sell') {
       // Sell uncommitted holdings, plus a cash-collateralized short if enabled.
-      const maxShort = this.userCanShort && px > 0 ? (SHORT_COLLATERAL * freeCash) / px : 0;
+      const maxShort = this.userCanShort ? shortCapacity(this.user, px) : 0;
       size = Math.min(size, Math.max(0, freeShares + maxShort));
       if (size < MIN_ORDER) {
         this.lastOrderNote = freeShares < MIN_ORDER
@@ -1036,9 +1060,9 @@ export class SimulationEngine {
       if (intents.length === 0) continue; // inactive makers keep their resting quotes
 
       this.book.cancelOrdersByOwner(agent.id); // cancel-and-replace
-      let availCash = agent.cash;
+      let availCash = freeBuyingPower(agent, px);
       let availShares = agent.shares;
-      const maxShort = CAN_SHORT.has(agent.type) && px > 0 ? (SHORT_COLLATERAL * agent.cash) / px : 0;
+      const maxShort = CAN_SHORT.has(agent.type) ? shortCapacity(agent, px) : 0;
 
       const risk = this.updateRiskScale(agent, px); // de-risked after losses, restored on recovery
       for (const intent of intents) {
@@ -1115,7 +1139,7 @@ export class SimulationEngine {
       if (delta > 0) {
         hedgeSize = Math.min(hedgeSize, hp > 0 ? Math.max(0, this.optionsDealer.cash) / hp : 0);
       } else {
-        const shortCap = hp > 0 ? (SHORT_COLLATERAL * Math.max(0, this.optionsDealer.cash)) / hp : 0;
+        const shortCap = shortCapacity(this.optionsDealer, hp);
         hedgeSize = Math.min(hedgeSize, Math.max(0, this.optionsDealer.shares + shortCap));
       }
       if (hedgeSize >= MIN_ORDER) {
