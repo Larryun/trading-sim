@@ -357,9 +357,9 @@ export function explainDecision(agent: Agent, market: MarketState): DecisionExpl
         rule: `${styleName} trader — holds a target exposure driven by a weighted blend of value, momentum, mean-reversion and sentiment${learns ? ', and LEARNS which signals to trust' : ''}.`,
         signals,
         verdict: v,
-        detail: v === 'hold'
-          ? 'Its signals roughly cancel out — no strong view, so it holds its current position.'
-          : `Weighted score → ${v}; it rebalances toward the exposure this view implies.${learns ? ' Weights adapt each tick toward whatever has been predicting returns.' : ''}`,
+        // Static description (doesn't flip with the live verdict): how it decides, not
+        // what it happens to want this exact tick.
+        detail: `It targets an exposure proportional to the blended score and rebalances only when its position drifts off that target — so a steady view means little trading, a flip means it reverses.${learns ? ' Its weights adapt over time toward whichever signals have been predicting returns.' : ''}`,
       };
     }
     case 'fomoHerd': {

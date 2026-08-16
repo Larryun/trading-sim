@@ -78,6 +78,7 @@ export function useSimulation() {
   const [myLimitOrders, setMyLimitOrders] = useState<RestingUserOrder[]>([]);
   const [dividendPerShare, setDividendState] = useState(engineRef.current.dividendPerShare);
   const [feeBps, setFeeState] = useState(engineRef.current.feeBps);
+  const [sentimentDecay, setSentimentDecayState] = useState(engineRef.current.sentimentDecay);
   const [running, setRunning] = useState(true);
   const [tickMs, setTickMs] = useState(200);
   const [stepMs, setStepMs] = useState(0); // measured compute time per tick (smoothed)
@@ -215,6 +216,11 @@ export function useSimulation() {
     setFeeState(v);
   }, []);
 
+  const setSentimentDecay = useCallback((v: number) => {
+    engineRef.current.sentimentDecay = v;
+    setSentimentDecayState(v);
+  }, []);
+
   const unrealizedPnl = user.shares * (currentPrice - user.avgCost);
 
   return {
@@ -238,6 +244,8 @@ export function useSimulation() {
     setDividendPerShare,
     feeBps,
     setFeeBps,
+    sentimentDecay,
+    setSentimentDecay,
     floatBreakdown,
     lastUserFill,
     userOrders,

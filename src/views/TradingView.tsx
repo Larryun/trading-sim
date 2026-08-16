@@ -77,6 +77,13 @@ export function TradingView() {
           <span style={{ width: 56, color: '#eee' }}>{sim.feeBps} bps</span>
         </label>
 
+        <label style={{ fontSize: 13, color: '#bbb', display: 'flex', alignItems: 'center', gap: 8 }} title="How long the mood lingers: sentiment shrinks by this fraction each tick. Higher = slower fade = regimes last longer.">
+          Mood persistence
+          <input type="range" min={0.9} max={0.998} step={0.002} value={sim.sentimentDecay}
+            onChange={(e) => sim.setSentimentDecay(Number(e.target.value))} />
+          <span style={{ width: 78, color: '#eee' }}>~{Math.round(Math.log(0.5) / Math.log(sim.sentimentDecay))}t half-life</span>
+        </label>
+
         <span style={{ fontSize: 11, color: '#777' }} title="Average compute time of one simulation tick">
           {sim.stepMs.toFixed(2)} ms/tick
         </span>

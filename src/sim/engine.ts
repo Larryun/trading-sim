@@ -77,7 +77,7 @@ export class SimulationEngine {
   };
 
   sentiment = 0;
-  sentimentDecay = 0.96; // mood persists (shrinks only slowly each tick) — regimes last
+  sentimentDecay = 0.98; // mood persists (shrinks only slowly each tick) — regimes last; ~34-tick half-life
   sentimentReflexivity = 3; // how strongly the recent trend feeds the mood (low = less self-reinforcing drift)
   fundamentalValue = STARTING_PRICE; // the "true" value; eases toward the target (post-news drift)
   fundamentalTarget = STARTING_PRICE; // where news has repriced fair value TO (diffuses in gradually)
