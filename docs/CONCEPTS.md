@@ -268,6 +268,21 @@ into existence.
 - **Market maker** — provides liquidity and earns the spread (section 4). *Emergent
   effect:* tighter spreads, smoother fills, and a general damping of volatility.
 
+### Who is in the market, and in what proportion
+
+A realistic pool has to match two *separate* facts, which are easy to confuse: who **owns**
+the float, and who generates the **volume**. Market makers own almost nothing yet are ~half
+of all trading; passive funds own a fifth of the company yet barely trade at all. The sim is
+tuned to both — makers ~5% of shares but ~48% of volume, passive ~18% of shares but ~0% of
+volume, retail ~34% of shares and ~12% of volume, institutions ~44% and ~38%.
+
+The subtle part is that retail must be **many small accounts** rather than a few medium ones.
+Retail is roughly a fifth of real trading volume, spread across an enormous number of tiny
+accounts; modelling it as a handful of medium participants makes it ~2% of volume and the
+market becomes a private conversation between makers and institutions. And because retail
+flow *takes* liquidity, adding it realistically requires proportionally more market-maker
+capital to absorb it, or the book simply empties out.
+
 - **Long-term holders (retail)** — the long tail of small shareholders who together own a
   large slice of the free float and almost never trade. They stir only when price gets far
   from fair value (beyond ±25%), supplying a trickle of stock into euphoric rallies and

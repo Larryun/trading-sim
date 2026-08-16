@@ -33,7 +33,10 @@ function createEngine(): SimulationEngine {
   // — Liquidity providers: several names, but deliberately a MINORITY of the capital.
   //   A maker that out-capitalizes the informed traders ends up setting the price with its
   //   own quotes rather than intermediating, which decouples price from fundamentals.
-  for (let i = 0; i < 6; i++) engine.addAgent('marketMaker', 400000);
+  //   Sized to ABSORB the retail flow below: retail is liquidity-TAKING, so a realistic
+  //   retail crowd needs proportionally more maker capacity or the book empties out
+  //   (6x400k left the market two-sided only ~83% of ticks against this much retail flow).
+  for (let i = 0; i < 6; i++) engine.addAgent('marketMaker', 600000);
 
   // — Passive/index funds: they hold a large, near-inert slice of the float (~28% between
   //   them, in line with real passive ownership of a big company) and barely trade. Their
@@ -58,13 +61,14 @@ function createEngine(): SimulationEngine {
   engine.addAgent('trader', 60000, 'news'); // event-driven
   engine.addAgent('trader', 60000, 'contrarian'); // mean-reversion desk
 
-  // — Retail: many participants, small accounts. Uninformed churn plus the two
-  //   behavioral extremes that make rallies overshoot and selloffs cascade.
-  for (let i = 0; i < 4; i++) engine.addAgent('noise', 20000);
-  engine.addAgent('fomoHerd', 30000);
-  engine.addAgent('fomoHerd', 25000);
-  engine.addAgent('panicSeller', 35000);
-  engine.addAgent('panicSeller', 30000);
+  // — Retail: MANY participants, each individually small. This is the shape that matters —
+  //   real retail is ~20% of traded volume spread across a huge number of small accounts,
+  //   not a handful of medium ones. With only 4 noise accounts retail was ~2% of volume,
+  //   which made the market a conversation between makers and institutions only.
+  for (let i = 0; i < 30; i++) engine.addAgent('noise', 25000);
+  //   Plus the two behavioral extremes that make rallies overshoot and selloffs cascade.
+  for (let i = 0; i < 4; i++) engine.addAgent('fomoHerd', 28000);
+  for (let i = 0; i < 4; i++) engine.addAgent('panicSeller', 32000);
 
   // — Options: live from the open. Speculators express views through calls/puts, and
   //   their open interest is what the dealer delta-hedges in the stock — so gamma

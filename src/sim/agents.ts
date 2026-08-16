@@ -164,7 +164,9 @@ export function createAgent(
   switch (type) {
     case 'noise':
       // Pure liquidity/noise: no profit-seeking exit (let it churn both ways).
-      return { id, name, type, frequency: 0.35, maxSize: 14, takeProfit: 0, stopLoss: 0, ...account };
+      // Sized so that a realistic NUMBER of retail accounts adds up to a realistic share of
+      // traded volume (~10-20%), rather than a token trickle.
+      return { id, name, type, frequency: 0.5, maxSize: 50, takeProfit: 0, stopLoss: 0, ...account };
     case 'trader': {
       // One configurable directional trader. Its `style` sets the signal weights
       // (its personality); learningRate > 0 makes it adapt those weights over time.
