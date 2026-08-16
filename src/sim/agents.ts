@@ -264,11 +264,15 @@ export function decideOrder(agent: Agent, market: MarketState): OrderIntent[] {
       const excess = targetShares > 0 ? (agent.shares - targetShares) / targetShares : 0;
       const skew = agent.inventorySkew * Math.max(-1, Math.min(1, excess)) * half;
       const center = mid - skew;
+      // Quote SMALLER when the spread is wide (volatile → more adverse-selection risk):
+      // a real maker trims size in fast markets. Gentle — from full size when calm down
+      // to ~50% as the adaptive spread hits its cap (a stronger cut spirals volatility).
+      const size = agent.quoteSize * Math.max(0.5, Math.min(1, agent.spreadBps / effSpreadBps));
       const intents: OrderIntent[] = [];
       for (let level = 1; level <= agent.levels; level++) {
         // Innermost first, so if capital runs low the near-touch levels post first.
-        intents.push({ side: 'buy', size: agent.quoteSize, limitPrice: Math.max(0.01, center - half * level) });
-        intents.push({ side: 'sell', size: agent.quoteSize, limitPrice: center + half * level });
+        intents.push({ side: 'buy', size, limitPrice: Math.max(0.01, center - half * level) });
+        intents.push({ side: 'sell', size, limitPrice: center + half * level });
       }
       return intents;
     }
