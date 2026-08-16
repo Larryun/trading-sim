@@ -66,6 +66,10 @@ export function useSimulation() {
   const [floatBreakdown, setFloatBreakdown] = useState<FloatBreakdown>(() => floatOf(engineRef.current));
   const [sentiment, setSentiment] = useState(0);
   const [sentimentBreakdown, setSentimentBreakdown] = useState(() => engineRef.current.sentimentBreakdown);
+  const [optionsEnabled, setOptionsEnabledState] = useState(false);
+  const [optionChain, setOptionChain] = useState<ReturnType<SimulationEngine['getOptionChain']>>([]);
+  const [optionPnl, setOptionPnl] = useState(0);
+  const [ticksToExpiry, setTicksToExpiry] = useState(0);
   const [fundamentalValue, setFundamentalValue] = useState(engineRef.current.fundamentalValue);
   const [eps, setEps] = useState(engineRef.current.eps);
   const valuationMultiple = engineRef.current.valuationMultiple;
@@ -138,6 +142,11 @@ export function useSimulation() {
     setFloatBreakdown(floatOf(engine));
     setSentiment(engine.sentiment);
     setSentimentBreakdown(engine.sentimentBreakdown);
+    if (engine.optionsEnabled) {
+      setOptionChain(engine.getOptionChain());
+      setOptionPnl(engine.optionPnl);
+      setTicksToExpiry(Math.max(0, engine.optionExpiryTick - engine.tick));
+    }
     setFundamentalValue(engine.fundamentalValue);
     setEps(engine.eps);
     setLastUserFill(engine.lastUserFill);
@@ -243,6 +252,17 @@ export function useSimulation() {
     setSentimentDecayState(v);
   }, []);
 
+  const enableOptions = useCallback((on: boolean) => {
+    engineRef.current.enableOptions(on);
+    setOptionsEnabledState(on);
+    refreshRef.current();
+  }, []);
+
+  const tradeOption = useCallback((contractId: number, qty: number) => {
+    engineRef.current.tradeOption(contractId, qty);
+    refreshRef.current();
+  }, []);
+
   const unrealizedPnl = user.shares * (currentPrice - user.avgCost);
 
   return {
@@ -260,6 +280,12 @@ export function useSimulation() {
     trades,
     sentiment,
     sentimentBreakdown,
+    optionsEnabled,
+    enableOptions,
+    optionChain,
+    tradeOption,
+    optionPnl,
+    ticksToExpiry,
     autoNews,
     triggerEvent,
     toggleAutoNews,
