@@ -53,7 +53,7 @@ export function TradingView() {
 
         <label style={{ fontSize: 13, color: '#bbb', display: 'flex', alignItems: 'center', gap: 8 }}>
           Bar size
-          <input type="range" min={1} max={20} step={1} value={sim.barInterval}
+          <input type="range" min={1} max={60} step={1} value={sim.barInterval}
             onChange={(e) => sim.setBarInterval(Number(e.target.value))} />
           <span style={{ width: 66, color: '#eee' }}>{sim.barInterval} ticks</span>
         </label>
