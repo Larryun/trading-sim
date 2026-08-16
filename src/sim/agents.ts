@@ -185,7 +185,7 @@ export function createAgent(
     case 'speculator':
       // Expresses a directional view through options: buys calls when bullish, puts
       // when bearish (handled in the engine — only when the options market is enabled).
-      return { id, name, type, window: 10, conviction: 0.3, budgetFrac: 0.07, activity: 0.4, takeProfit: 0, stopLoss: 0, ...account };
+      return { id, name, type, window: 10, conviction: 0.3, budgetFrac: 0.07, minTicksToExpiry: 60, entryPrice: new Map(), activity: 0.4, takeProfit: 0, stopLoss: 0, ...account };
   }
 }
 

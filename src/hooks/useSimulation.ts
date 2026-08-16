@@ -177,7 +177,7 @@ export function useSimulation() {
       setOptionChain(engine.getOptionChain());
       setOptionPnl(engine.optionPnl);
       setUserOptionValue(engine.userOptionValue);
-      setTicksToExpiry(Math.max(0, engine.optionExpiryTick - engine.tick));
+      setTicksToExpiry(Math.max(0, engine.nearestExpiryTick - engine.tick));
       setDealerState(engine.optionsDealerState);
       setOptionGreeks(engine.optionGreeks);
     }

@@ -168,6 +168,8 @@ export interface SpeculatorAgent extends AgentAccount {
   window: number; // lookback for the momentum part of its signal
   conviction: number; // how strongly the signal must lean before it buys
   budgetFrac: number; // max fraction of cash spent on premium per trade
+  minTicksToExpiry: number; // won't buy a series with less time than this (avoids pure decay)
+  entryPrice: Map<number, number>; // contractId -> premium paid, so it can take profit / cut losses
   activity: number;
   takeProfit: number; // 0
   stopLoss: number; // 0

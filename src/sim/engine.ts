@@ -61,7 +61,11 @@ const TICKS_PER_YEAR = 800; // 4 quarters × 200 ticks — for Black-Scholes tim
 // bet control a tenth of the whole float. Scaled to ×10 to keep the option market
 // PROPORTIONATE to the underlying, the way listed options are in reality.
 const CONTRACT_MULTIPLIER = 10;
-const OPTION_LIFETIME = 100; // ticks until a freshly-issued chain expires (~a month, like real listed options)
+// Real chains list SEVERAL expiries at once (weeklies out to LEAPS), and each behaves
+// differently: near-dated options are cheap, high-gamma lottery tickets that decay fast;
+// far-dated ones cost more, decay slowly and are mostly vega. Tenors in ticks
+// (200 ticks = one "quarter"), so ~a month / a quarter / half a year.
+const OPTION_TENORS = [70, 200, 500];
 const OPTION_STRIKE_OFFSETS = [-0.1, -0.05, 0, 0.05, 0.1]; // strikes as fractions around spot
 const OPTION_HEDGE_RATE = 0.2; // fraction of the delta gap the dealer hedges per tick (gradual)
 const OPTION_DEALER_CAPITAL = 2000000; // the dealer desk's balance sheet — its hedging is bounded by this
@@ -188,7 +192,6 @@ export class SimulationEngine {
   // ownerId ('user' or an agent id) -> (contractId -> net long qty). The dealer is short
   // the sum of ALL of these, so agent (speculator) open interest counts too.
   optionPositions = new Map<string, Map<number, number>>();
-  optionExpiryTick = 0;
   // Implied vol is DERIVED from recent realized volatility (plus a variance risk
   // premium), refreshed each tick — not a fixed guess. A hardcoded IV far above
   // realized vol would make every option wildly overpriced, bleeding buyers dry and
@@ -310,11 +313,10 @@ export class SimulationEngine {
     const acct = this.agents.find((a) => a.id === id);
     if (pos && acct) {
       const spot = this.book.getLastTradePrice();
-      const tau = this.optionTau();
       for (const [cid, qty] of pos) {
         const c = this.optionChain.find((x) => x.id === cid);
         if (!c || qty === 0) continue;
-        const mark = blackScholes(c.type, spot, c.strike, tau, this.optionImpliedVol, this.optionRate).price * CONTRACT_MULTIPLIER;
+        const mark = this.quote(c, spot).price * CONTRACT_MULTIPLIER;
         acct.cash += qty * mark;
         this.optionsDealer.cash -= qty * mark;
       }
@@ -360,14 +362,13 @@ export class SimulationEngine {
    */
   private closeOutOptions(): void {
     const spot = this.book.getLastTradePrice();
-    const tau = this.optionTau();
     for (const [ownerId, pos] of this.optionPositions) {
       const acct = this.accountOf(ownerId);
       for (const [cid, qty] of pos) {
         if (qty === 0 || !acct) continue;
         const c = this.optionChain.find((x) => x.id === cid);
         if (!c) continue;
-        const mark = blackScholes(c.type, spot, c.strike, tau, this.optionImpliedVol, this.optionRate).price * CONTRACT_MULTIPLIER;
+        const mark = this.quote(c, spot).price * CONTRACT_MULTIPLIER;
         acct.cash += qty * mark; // holder is bought out at the mark
         this.optionsDealer.cash -= qty * mark;
         if (ownerId === 'user') this.userOptionCashFlow += qty * mark;
@@ -385,8 +386,21 @@ export class SimulationEngine {
     }
   }
 
-  private optionTau(): number {
-    return Math.max(1e-4, (this.optionExpiryTick - this.tick) / TICKS_PER_YEAR);
+  /** Time to expiry in YEARS for a specific contract (each has its own expiry). */
+  private tauOf(c: OptionContract): number {
+    return Math.max(1e-4, (c.expiryTick - this.tick) / TICKS_PER_YEAR);
+  }
+
+  /** Price + greeks for one contract, at its own time to expiry. */
+  private quote(c: OptionContract, spot = this.currentPrice) {
+    return blackScholes(c.type, spot, c.strike, this.tauOf(c), this.optionImpliedVol, this.optionRate);
+  }
+
+  /** The soonest expiry still listed (for the "ticks to expiry" readout). */
+  get nearestExpiryTick(): number {
+    let best = Infinity;
+    for (const c of this.optionChain) if (c.expiryTick < best) best = c.expiryTick;
+    return Number.isFinite(best) ? best : this.tick;
   }
 
   /**
@@ -467,11 +481,10 @@ export class SimulationEngine {
    */
   get optionGreeks(): { delta: number; gamma: number; vega: number; theta: number; dealerDelta: number } {
     const spot = this.currentPrice;
-    const tau = this.optionTau();
     let delta = 0, gamma = 0, vega = 0, theta = 0;
     if (this.optionsEnabled) {
       const g = new Map<number, ReturnType<typeof blackScholes>>();
-      for (const c of this.optionChain) g.set(c.id, blackScholes(c.type, spot, c.strike, tau, this.optionImpliedVol, this.optionRate));
+      for (const c of this.optionChain) g.set(c.id, this.quote(c, spot));
       for (const [, pos] of this.optionPositions) {
         for (const [cid, qty] of pos) {
           const k = g.get(cid);
@@ -488,28 +501,66 @@ export class SimulationEngine {
     return { delta, gamma, vega, theta, dealerDelta: this.optionsDealer.shares - delta };
   }
 
-  /** Issue a fresh chain of calls+puts at strikes around spot, with a new expiry. */
-  private rollOptionChain(): void {
+  /** List calls+puts at strikes around spot for ONE expiry. */
+  private listExpiry(expiryTick: number): void {
     const spot = this.book.getLastTradePrice();
-    this.optionChain = [];
-    this.optionPositions.clear();
-    this.optionExpiryTick = this.tick + OPTION_LIFETIME;
     for (const off of OPTION_STRIKE_OFFSETS) {
       const strike = Math.max(1, Math.round(spot * (1 + off)));
       for (const type of ['call', 'put'] as OptionType[]) {
-        this.optionChain.push({ id: this.nextContractId++, type, strike, expiryTick: this.optionExpiryTick });
+        this.optionChain.push({ id: this.nextContractId++, type, strike, expiryTick });
       }
     }
   }
 
-  /** The chain priced right now (Black-Scholes) with the user's position + total OI. */
-  getOptionChain(): { id: number; type: OptionType; strike: number; price: number; delta: number; gamma: number; userQty: number; openInterest: number }[] {
+  /** Build the whole chain from scratch: every tenor, each with its own expiry. */
+  private rollOptionChain(): void {
+    this.optionChain = [];
+    this.optionPositions.clear();
+    for (const tenor of OPTION_TENORS) this.listExpiry(this.tick + tenor);
+  }
+
+  /**
+   * Cash-settle only the contracts that have actually EXPIRED (each has its own expiry),
+   * then list a replacement at the longest tenor so the chain always offers a range of
+   * maturities — instead of wiping the whole board on one clock.
+   */
+  private settleExpiredContracts(): void {
+    const due = this.optionChain.filter((c) => this.tick >= c.expiryTick);
+    if (due.length === 0) return;
     const spot = this.book.getLastTradePrice();
-    const tau = this.optionTau();
+    const dueIds = new Set(due.map((c) => c.id));
+    for (const [ownerId, pos] of this.optionPositions) {
+      const acct = this.accountOf(ownerId);
+      for (const [cid, qty] of pos) {
+        if (!dueIds.has(cid) || qty === 0) continue;
+        const c = due.find((x) => x.id === cid)!;
+        const payout = qty * intrinsicValue(c.type, spot, c.strike) * CONTRACT_MULTIPLIER;
+        if (acct) {
+          acct.cash += payout; // holder is paid intrinsic
+          this.optionsDealer.cash -= payout; // the dealer wrote it
+          if (ownerId === 'user') this.userOptionCashFlow += payout;
+        }
+        pos.delete(cid);
+      }
+    }
+    this.optionChain = this.optionChain.filter((c) => !dueIds.has(c.id));
+    // Replace each expired series with a newly-listed far-dated one.
+    const tenors = new Set(due.map((c) => c.expiryTick));
+    for (let i = 0; i < tenors.size; i++) this.listExpiry(this.tick + OPTION_TENORS[OPTION_TENORS.length - 1]);
+  }
+
+  /** The chain priced right now (Black-Scholes) with the user's position + total OI. */
+  getOptionChain(): { id: number; type: OptionType; strike: number; expiryTick: number; ticksToExpiry: number; price: number; delta: number; gamma: number; theta: number; userQty: number; openInterest: number }[] {
+    const spot = this.book.getLastTradePrice();
     const userPos = this.optionPositions.get('user');
     return this.optionChain.map((c) => {
-      const g = blackScholes(c.type, spot, c.strike, tau, this.optionImpliedVol, this.optionRate);
-      return { id: c.id, type: c.type, strike: c.strike, price: g.price, delta: g.delta, gamma: g.gamma, userQty: userPos?.get(c.id) ?? 0, openInterest: this.openInterestOf(c.id) };
+      const g = this.quote(c, spot);
+      return {
+        id: c.id, type: c.type, strike: c.strike,
+        expiryTick: c.expiryTick, ticksToExpiry: Math.max(0, c.expiryTick - this.tick),
+        price: g.price, delta: g.delta, gamma: g.gamma, theta: g.theta / TICKS_PER_YEAR,
+        userQty: userPos?.get(c.id) ?? 0, openInterest: this.openInterestOf(c.id),
+      };
     });
   }
 
@@ -520,7 +571,7 @@ export class SimulationEngine {
     const acct = this.accountOf(ownerId);
     if (!c || !acct) return;
     const spot = this.book.getLastTradePrice();
-    const price = blackScholes(c.type, spot, c.strike, this.optionTau(), this.optionImpliedVol, this.optionRate).price;
+    const price = this.quote(c, spot).price;
     const pos = this.optionPos(ownerId);
     const held = pos.get(contractId) ?? 0;
     let q = qty;
@@ -558,12 +609,11 @@ export class SimulationEngine {
   /** Mark-to-market value of the user's open option positions. */
   get userOptionValue(): number {
     const spot = this.book.getLastTradePrice();
-    const tau = this.optionTau();
     const pos = this.optionPositions.get('user');
     let v = 0;
     if (pos) for (const c of this.optionChain) {
       const qty = pos.get(c.id) ?? 0;
-      if (qty !== 0) v += qty * blackScholes(c.type, spot, c.strike, tau, this.optionImpliedVol, this.optionRate).price * CONTRACT_MULTIPLIER;
+      if (qty !== 0) v += qty * this.quote(c, spot).price * CONTRACT_MULTIPLIER;
     }
     return v;
   }
@@ -592,9 +642,8 @@ export class SimulationEngine {
   /** Shares the dealer must hold to be delta-neutral = +(all holders' option delta). */
   private optionHedgeTarget(): number {
     const spot = this.book.getLastTradePrice();
-    const tau = this.optionTau();
     const deltaByContract = new Map<number, number>();
-    for (const c of this.optionChain) deltaByContract.set(c.id, blackScholes(c.type, spot, c.strike, tau, this.optionImpliedVol, this.optionRate).delta);
+    for (const c of this.optionChain) deltaByContract.set(c.id, this.quote(c, spot).delta);
     let delta = 0;
     for (const [, pos] of this.optionPositions) {
       for (const [cid, qty] of pos) {
@@ -616,20 +665,47 @@ export class SimulationEngine {
     for (const a of this.agents) {
       if (a.type !== 'speculator') continue;
       if (Math.random() >= a.activity) continue;
-      // One bet at a time: if it already holds options, hold them to expiry (the chain
-      // roll clears positions), so open interest stays bounded instead of stacking.
+
+      // MANAGE an open position first: take profit or cut losses instead of only ever
+      // riding to expiry. Holding a decaying lottery ticket to zero is why a buy-only
+      // speculator can never win; real punters do close winners.
       const existing = this.optionPositions.get(a.id);
-      if (existing && [...existing.values()].some((q) => Math.abs(q) > 1e-9)) continue;
+      if (existing && existing.size > 0) {
+        let closedAny = false;
+        for (const [cid, qty] of [...existing]) {
+          if (qty <= 0) continue;
+          const c = this.optionChain.find((x) => x.id === cid);
+          if (!c) continue;
+          const mark = this.quote(c, spot).price;
+          const entry = a.entryPrice.get(cid);
+          const ticksLeft = c.expiryTick - this.tick;
+          if (entry && entry > 0) {
+            const ret = mark / entry - 1;
+            // +100% → bank it; −60% → cut it; and don't ride the last few ticks of decay.
+            if (ret >= 1 || ret <= -0.6 || ticksLeft <= 5) {
+              this.tradeOption(cid, -qty, a.id);
+              a.entryPrice.delete(cid);
+              closedAny = true;
+            }
+          }
+        }
+        // Still holding something? Keep it — one position at a time keeps OI bounded.
+        if ([...existing.values()].some((q) => Math.abs(q) > 1e-9)) continue;
+        if (closedAny) continue; // took action this tick
+      }
+
       const sig = speculatorSignal(a, market);
       const wantType: OptionType | null = sig > a.conviction ? 'call' : sig < -a.conviction ? 'put' : null;
       if (!wantType) continue;
-      // Pick the nearest slightly-OTM strike of the desired type.
-      const candidates = this.optionChain.filter((c) => c.type === wantType);
+      // Slightly-OTM strike, and a tenor that isn't about to expire: the shortest-dated
+      // series is nearly all decay, so prefer one with real time left (as a punter would).
       const target = wantType === 'call' ? spot * 1.03 : spot * 0.97;
-      candidates.sort((x, y) => Math.abs(x.strike - target) - Math.abs(y.strike - target));
+      const usable = this.optionChain.filter((c) => c.type === wantType && c.expiryTick - this.tick >= a.minTicksToExpiry);
+      const candidates = usable.length > 0 ? usable : this.optionChain.filter((c) => c.type === wantType);
+      candidates.sort((x, y) => (Math.abs(x.strike - target) - Math.abs(y.strike - target)) || (x.expiryTick - y.expiryTick));
       const pick = candidates[0];
       if (!pick) continue;
-      const price = blackScholes(pick.type, spot, pick.strike, this.optionTau(), this.optionImpliedVol, this.optionRate).price;
+      const price = this.quote(pick, spot).price;
       const perContract = price * CONTRACT_MULTIPLIER;
       // Budget off its MANDATE (starting capital), not its current pile: otherwise a
       // winning streak compounds into ever-larger bets that swamp the whole market.
@@ -638,7 +714,10 @@ export class SimulationEngine {
       // Respect the market-wide open-interest cap (dealers only write what they can hedge).
       const oiRoom = (OPTION_MAX_OI_FRACTION * this.sharesOutstanding) / CONTRACT_MULTIPLIER - this.totalOpenInterest();
       qty = Math.min(qty, Math.floor(Math.max(0, oiRoom)));
-      if (qty >= 1) this.tradeOption(pick.id, qty, a.id);
+      if (qty >= 1) {
+        this.tradeOption(pick.id, qty, a.id);
+        a.entryPrice.set(pick.id, price); // remember the entry so it can take profit / cut
+      }
     }
   }
 
@@ -838,25 +917,9 @@ export class SimulationEngine {
       this.newsClusterTicks = NEWS_CLUSTER_TICKS;
     }
 
-    // Option expiry: cash-settle every open contract at intrinsic value (the holder is
-    // paid by the dealer), then roll a fresh chain around the current price.
-    if (this.optionsEnabled && this.tick >= this.optionExpiryTick) {
-      const spot = this.book.getLastTradePrice();
-      const intrinsic = new Map<number, number>();
-      for (const c of this.optionChain) intrinsic.set(c.id, intrinsicValue(c.type, spot, c.strike));
-      for (const [ownerId, pos] of this.optionPositions) {
-        const acct = this.accountOf(ownerId);
-        if (!acct) continue;
-        for (const [cid, qty] of pos) {
-          if (qty === 0) continue;
-          const payout = qty * (intrinsic.get(cid) ?? 0) * CONTRACT_MULTIPLIER;
-          acct.cash += payout; // holder is paid intrinsic
-          this.optionsDealer.cash -= payout; // written by the dealer
-          if (ownerId === 'user') this.userOptionCashFlow += payout;
-        }
-      }
-      this.rollOptionChain();
-    }
+    // Options expire on their OWN clocks: settle just the contracts that came due and
+    // list a replacement far-dated series, so a range of maturities stays available.
+    if (this.optionsEnabled) this.settleExpiredContracts();
 
     // The slow mood tide wanders continuously and lingers on one side for a long time
     // (a persistent AR(1)), giving lasting-but-nuanced bull/bear regimes rather than a

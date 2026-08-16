@@ -8,16 +8,25 @@ export function OptionsView() {
   const sim = useSim();
   const [qty, setQty] = useState(1);
 
-  // Group the chain by strike so calls sit left, puts right, on one row.
+  // The chain lists SEVERAL expiries; pick one to view (they'd collide on a strike row).
+  const expiries = useMemo(
+    () => [...new Set(sim.optionChain.map((c) => c.expiryTick))].sort((a, b) => a - b),
+    [sim.optionChain],
+  );
+  const [expiryIdx, setExpiryIdx] = useState(0);
+  const activeExpiry = expiries[Math.min(expiryIdx, Math.max(0, expiries.length - 1))];
+
+  // Group the selected expiry by strike so calls sit left, puts right, on one row.
   const rows = useMemo(() => {
     const byStrike = new Map<number, { strike: number; call?: typeof sim.optionChain[number]; put?: typeof sim.optionChain[number] }>();
     for (const c of sim.optionChain) {
+      if (c.expiryTick !== activeExpiry) continue;
       const r = byStrike.get(c.strike) ?? { strike: c.strike };
       if (c.type === 'call') r.call = c; else r.put = c;
       byStrike.set(c.strike, r);
     }
     return [...byStrike.values()].sort((a, b) => a.strike - b.strike);
-  }, [sim.optionChain]);
+  }, [sim.optionChain, activeExpiry]);
 
   const spot = sim.currentPrice;
   const oiRows = rows.map((r) => ({
@@ -98,6 +107,21 @@ export function OptionsView() {
           </div>
 
           <div style={{ ...panel, overflowX: 'auto' }}>
+            <SectionHeaderRow
+              right={
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {expiries.map((ex, i) => (
+                    <button key={ex} onClick={() => setExpiryIdx(i)}
+                      style={{ fontSize: 11, padding: '3px 10px', borderRadius: 5, cursor: 'pointer',
+                        border: `1px solid ${colors.border}`,
+                        background: ex === activeExpiry ? colors.raised : colors.bg2,
+                        color: ex === activeExpiry ? '#fff' : colors.muted }}>
+                      {Math.max(0, ex - sim.tick)}t
+                    </button>
+                  ))}
+                </div>
+              }
+            >Chain · expiry in {Math.max(0, (activeExpiry ?? 0) - sim.tick)} ticks</SectionHeaderRow>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, ...tabularNums, textAlign: 'center' }}>
               <thead>
                 <tr style={{ color: colors.muted }}>
