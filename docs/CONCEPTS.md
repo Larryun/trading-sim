@@ -8,11 +8,12 @@ those participants, tune how they behave, fire off news, and shrink or grow the
 share supply — all while watching the price, volume, sentiment, and ownership
 update tick by tick.
 
-It has two pages: the **Market** view (`/`) where you trade and tune, and a
-**Statistics** view (`/stats`) that analyzes the *same live market* — profit &
-loss by strategy, float ownership, money flows (dividends in vs. fees out), and
-how closely price tracks fundamental value. The stats page is the quickest way to
-*see* the ideas below playing out (e.g. which strategies actually make money).
+It has four pages, all driving the *same live market*: the **Market** view (`/`) where you
+trade and tune, an **Options** view (`/options`) for the calls/puts chain and its greeks, a
+**Statistics** view (`/stats`) — profit & loss by strategy, float ownership, money flows
+(dividends in vs. fees out) — and a **Decisions** view (`/decisions`) explaining what each
+kind of participant would do right now. Stats is the quickest way to *see* the ideas below
+playing out (e.g. which strategies actually make money).
 
 The big idea it teaches is this:
 
@@ -26,8 +27,8 @@ price rises. When sellers dominate, they hit lower and lower bids and the price
 falls. The market is a machine for turning a mix of intentions into a single
 number, and this sim lets you take that machine apart.
 
-The simulation starts at a price of **100**, with **50,000** shares outstanding,
-a handful of pre-loaded agents, and you holding **$10,000** in cash. Time
+The simulation starts at a price of **100**, with roughly **170,000** shares
+outstanding, a pre-loaded cast of participants, and you holding **$100,000** in cash. Time
 advances in discrete **ticks** (you control the speed); on each tick, agents
 decide what to do, orders hit the book, trades print, and the price updates.
 
@@ -146,15 +147,24 @@ than adding resting depth. The tightest quotes among all makers set the spread;
 add makers or deepen their ladders and the book fills out, **remove them all and
 the book empties — the market goes illiquid until someone quotes again.**
 
-Two further things real makers do, both modeled:
+Three further things real makers do, all modeled:
 - **They trim size when it's risky.** As volatility widens a maker's spread, it also
   **quotes smaller** — pulling capital back exactly when informed flow is most dangerous.
-- **They have an inventory limit.** A maker stops quoting the side that would *grow* an
-  already-large position (it keeps quoting the other side to work back toward flat) and
-  may go **short** to keep an offer up. Without a limit, a well-capitalized maker will
-  absorb an entire trend until it is broke — and a broke maker stops quoting altogether,
-  which is far worse for the market than a wider spread. This is why market makers earn
-  the spread but are *not* meant to take a directional view.
+- **They target FLAT inventory via a reservation price.** Rather than refusing to quote, a
+  maker *shifts the price it quotes around*: holding too much stock pushes both its quotes
+  **down** (eager to sell, reluctant to buy), being short pushes them **up**. The shift
+  grows with the imbalance, so inventory mean-reverts on its own — this is the
+  Avellaneda–Stoikov idea. It can also go **short** to keep an offer up, as real makers do.
+- **They mark to an external reference, not to their own last trade.** A maker that quotes
+  purely around the last print is self-referential: skewing down makes it print lower,
+  which makes it quote lower still — a ratchet with nothing to stop it. So its reference is
+  pulled slightly toward a **lagging price average**. Note it is deliberately *not* pulled
+  toward fair value: that would give the maker a valuation opinion and turn it into a value
+  trader rather than an intermediary.
+
+Crucially, makers are a **minority of the capital** here. Whoever holds the most capital
+effectively sets the price, so if the makers out-weigh the informed (value) traders, price
+follows the makers' own quotes instead of the fundamentals.
 
 ---
 
@@ -258,6 +268,12 @@ into existence.
 - **Market maker** — provides liquidity and earns the spread (section 4). *Emergent
   effect:* tighter spreads, smoother fills, and a general damping of volatility.
 
+- **Index / passive fund** — holds a large, largely **inert** block of stock and is
+  **price-inelastic**: it trades because money flowed into or out of the fund, not because
+  the stock is cheap, and only on a slow rebalancing schedule. *Emergent effect:* it owns
+  most of the float while contributing almost no order flow — which is what keeps market
+  makers from being the dominant *owners* of the stock, as in a real market.
+
 - **Options speculator** — expresses a directional view through **options** instead of
   stock: buys **calls** in bullish regimes, **puts** in bearish ones (long-only,
   cash-limited), holding to expiry. *Emergent effect:* its **open interest** is what the
@@ -279,7 +295,7 @@ into existence.
 
 > All of these are implemented and can be added, removed, and tuned live from the
 > Agents panel: **noise, market maker, FOMO herd, whale, panic seller, options
-> speculator, gamma squeeze (test)**, and the **Trader** (with the Value / Trend /
+> speculator, index/passive fund, gamma squeeze (test)**, and the **Trader** (with the Value / Trend /
 > Contrarian / News / Balanced / Adaptive styles). The **Agent Decisions** view
 > explains what each one would do right now and why.
 

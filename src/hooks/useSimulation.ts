@@ -30,13 +30,19 @@ function createEngine(): SimulationEngine {
   // provide nearly all the liquidity, a small professional cohort trades signals,
   // and a numerous but individually small retail crowd supplies the churn.
 
-  // — Liquidity providers: few names, big balance sheets, most of the volume. Enough
-  //   of them to keep the book deep and the spread tight, as in a liquid real market.
-  for (let i = 0; i < 6; i++) engine.addAgent('marketMaker', 750000);
+  // — Liquidity providers: several names, but deliberately a MINORITY of the capital.
+  //   A maker that out-capitalizes the informed traders ends up setting the price with its
+  //   own quotes rather than intermediating, which decouples price from fundamentals.
+  for (let i = 0; i < 6; i++) engine.addAgent('marketMaker', 400000);
+
+  // — Passive/index funds: they hold the bulk of the float and barely trade. This is what
+  //   keeps market makers a MINORITY of both ownership and flow, as in a real market —
+  //   without them, maker capital dwarfs the float and maker quotes end up setting price.
+  for (let i = 0; i < 2; i++) engine.addAgent('indexFund', 6000000);
 
   // — Institutions: the most capital, the fewest names. The value cohort is what
   //   tethers price to the earnings-based fair value (the market's gravity).
-  for (let i = 0; i < 3; i++) engine.addAgent('trader', 500000, 'value');
+  for (let i = 0; i < 5; i++) engine.addAgent('trader', 1500000, 'value');
   const whale = engine.addAgent('whale', 1500000); // a fund rotating a large stake on valuation
   engine.updateAgentParams(whale.id, { targetShares: 3000, sliceSize: 60 });
 

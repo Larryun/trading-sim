@@ -13,7 +13,7 @@ interface Props {
   getPnlSpark: (id: string) => number[];
 }
 
-const AGENT_TYPES: AgentType[] = ['noise', 'marketMaker', 'fomoHerd', 'whale', 'panicSeller', 'trader', 'dealer', 'speculator'];
+const AGENT_TYPES: AgentType[] = ['noise', 'marketMaker', 'fomoHerd', 'whale', 'panicSeller', 'trader', 'dealer', 'speculator', 'indexFund'];
 const TRADER_STYLE_KEYS = Object.keys(TRADER_STYLES) as TraderStyle[];
 
 // Which types use the shared take-profit / stop-loss exit overlay.
@@ -45,6 +45,9 @@ const PARAM_HELP: Record<string, string> = {
   'Open interest': 'Size of the simulated options book — scales how many shares must be hedged per $1 move. Higher = a more violent squeeze (~2000-4000 is clearly visible; very high values can overwhelm the book).',
   Strike: 'The simulated call wall. Gamma is more negative ABOVE this price, so set it at or just below the current price to arm a squeeze on the next rally.',
   'Bias threshold': 'How strongly its signal must lean before it buys calls (bullish) or puts (bearish).',
+  Mandate: 'The share block this fund is meant to hold. It drifts toward this regardless of price.',
+  'Rebalance every': 'Ticks between adjustments — it is completely inert in between.',
+  'Max slice': 'Largest fraction of its mandate traded in one rebalance.',
   'Budget (% cash)': 'Most of its cash it spends on option premium per trade.',
   'Peak window': 'Ticks used to track the recent high for drawdown.',
   'Panic threshold': 'Drawdown from the peak that triggers selling.',
@@ -232,6 +235,16 @@ function AgentParams({ agent, onUpdate }: { agent: Agent; onUpdate: (patch: Reco
           <Slider label="Open interest" value={agent.openInterest} min={0} max={20000} step={250} onChange={(v) => onUpdate({ openInterest: v })} format={(v) => v.toFixed(0)} />
           <Slider label="Strike" value={agent.strike} min={1} max={300} step={1} onChange={(v) => onUpdate({ strike: v })} format={(v) => `$${v.toFixed(0)}`} />
           <Slider label="Activity" value={agent.activity} min={0} max={1} step={0.05} onChange={(v) => onUpdate({ activity: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
+        </>
+      )}
+      {agent.type === 'indexFund' && (
+        <>
+          <Slider label="Mandate" value={agent.targetShares} min={0} max={200000} step={1000}
+            onChange={(v) => onUpdate({ targetShares: v })} format={(v) => `${(v / 1000).toFixed(0)}k sh`} />
+          <Slider label="Rebalance every" value={agent.rebalanceEvery} min={10} max={400} step={10}
+            onChange={(v) => onUpdate({ rebalanceEvery: v })} format={(v) => `${v} ticks`} />
+          <Slider label="Max slice" value={agent.maxSliceFrac} min={0.005} max={0.1} step={0.005}
+            onChange={(v) => onUpdate({ maxSliceFrac: v })} format={(v) => `${(v * 100).toFixed(1)}%`} />
         </>
       )}
       {agent.type === 'speculator' && (

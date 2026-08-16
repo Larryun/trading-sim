@@ -81,12 +81,9 @@ const OPTION_MAX_OI_FRACTION = 0.15;
 // Short selling: bearish "view" traders can borrow & sell (shares go negative),
 // collateralized by their cash. If a rising price wipes out that collateral they
 // get margin-called and forced to buy back — the fuel for short squeezes.
-// Market makers are deliberately NOT included. Their inventory anchor is long-biased
-// (~half of equity in stock), so they never need to short to quote — and if they can, they
-// slowly drift net short, at which point margin calls start firing. A margin call skips
-// that agent's quoting for the tick, so a maker stuck covering stops posting bids
-// entirely and the bid side of the book disappears.
-const CAN_SHORT = new Set<AgentType>(['trader', 'dealer']);
+// Market makers ARE included: a maker targeting FLAT inventory must be able to go short to
+// keep an offer up, exactly as real makers do.
+const CAN_SHORT = new Set<AgentType>(['trader', 'dealer', 'marketMaker']);
 const SHORT_COLLATERAL = 1; // may short up to this * cash worth of shares
 const MAINT_MARGIN = 0.25; // margin call when equity falls below this * short exposure
 // Sentiment realism: beyond discrete news jumps, the "mood" also reacts to recent
@@ -211,7 +208,7 @@ export class SimulationEngine {
   optionsDealer: AgentAccount = { startingCapital: 0, cash: 0, shares: 0, avgCost: 0, realizedPnl: 0, tradeCount: 0 };
 
   private nextAgentNum: Record<AgentType, number> = {
-    noise: 0, marketMaker: 0, fomoHerd: 0, whale: 0, panicSeller: 0, trader: 0, dealer: 0, speculator: 0,
+    noise: 0, marketMaker: 0, fomoHerd: 0, whale: 0, panicSeller: 0, trader: 0, dealer: 0, speculator: 0, indexFund: 0,
   };
   private nextAgentId = 1;
 
@@ -1004,7 +1001,9 @@ export class SimulationEngine {
             this.settle(t, registry);
             tickTrades.push(t);
           }
-          continue; // busy covering this tick
+          // A maker must keep quoting even while covering — dropping out of the book is
+          // more damaging to the market than its own inventory problem.
+          if (agent.type !== 'marketMaker') continue;
         }
       }
 

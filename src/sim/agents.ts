@@ -42,6 +42,7 @@ export const AGENT_TYPE_LABELS: Record<AgentType, string> = {
   trader: 'Trader',
   dealer: 'Gamma squeeze (test)',
   speculator: 'Options speculator',
+  indexFund: 'Index / passive fund',
 };
 
 export const AGENT_TYPE_COLORS: Record<AgentType, string> = {
@@ -53,6 +54,7 @@ export const AGENT_TYPE_COLORS: Record<AgentType, string> = {
   trader: '#22d3ee',
   dealer: '#eab308',
   speculator: '#f472b6',
+  indexFund: '#64748b',
 };
 
 /**
@@ -112,6 +114,12 @@ export function traderSignals(agent: { window: number }, market: MarketState, pr
 }
 export const SIGNAL_NAMES = ['value', 'momentum', 'mean-rev', 'sentiment'];
 
+// A market maker's quote reference is pulled slightly toward a lagging price average
+// rather than being purely its own last print — just enough to break the self-referential
+// ratchet, with no view on value.
+const MM_ANCHOR_PULL = 0.25;
+const MM_ANCHOR_WINDOW = 50;
+
 // Minimum meaningful order size (mirrors the engine's own floor).
 const MIN_ORDER = 0.01;
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
@@ -161,7 +169,7 @@ export function createAgent(
       // A maker manages inventory via quote skew, so the shared TP/SL exit is off.
       // Deep ladders + a volatility-adaptive spread so it widens (charging more) when
       // informed flow is pushing the price around, its defense against adverse selection.
-      return { id, name, type, spreadBps: 12, volSensitivity: 0.8, maxSpreadBps: 100, quoteSize: 300, levels: 12, inventorySkew: 0.4, activity: 0.8, takeProfit: 0, stopLoss: 0, ...account };
+      return { id, name, type, spreadBps: 12, volSensitivity: 0.8, maxSpreadBps: 100, quoteSize: 300, levels: 12, inventorySkew: 0.15, activity: 0.8, takeProfit: 0, stopLoss: 0, ...account };
     case 'fomoHerd':
       // Threshold lowered to match the (small) moves a deeply-liquid book produces,
       // so the crowd actually chases rallies instead of waiting for a rare spike.
@@ -175,6 +183,15 @@ export function createAgent(
         activity: 0.6, valueBand: 0.03, takeProfit: 0, stopLoss: 0,
         ...account,
         ...(allCash ? {} : { cash: capital * 0.9, shares: (capital * 0.1) / startingPrice }),
+      };
+    case 'indexFund':
+      // Mostly SHARES, barely any cash: a passive vehicle exists to hold the stock, not
+      // to trade it. Its block is what gives the float a realistic owner.
+      return {
+        id, name, type, targetShares: (capital * 0.95) / startingPrice, rebalanceEvery: 50, maxSliceFrac: 0.02,
+        activity: 1, takeProfit: 0, stopLoss: 0,
+        ...account,
+        ...(allCash ? {} : { cash: capital * 0.05, shares: (capital * 0.95) / startingPrice }),
       };
     case 'panicSeller':
       return { id, name, type, peakWindow: 15, panicThreshold: 0.06, capitulationDD: 0.15, baseDumpFrac: 0.4, sentPanic: 0.6, reentryFrac: 0.3, activity: 0.7, takeProfit: 0, stopLoss: 0, ...account };
@@ -264,16 +281,25 @@ export function decideOrder(agent: Agent, market: MarketState): OrderIntent[] {
       const volBps = realizedVol(market.priceHistory, 20) * 10000;
       const effSpreadBps = Math.min(agent.maxSpreadBps, agent.spreadBps + agent.volSensitivity * volBps);
       const half = mid * (effSpreadBps / 10000);
-      // Inventory skew: quote lower when long / higher when short to unwind. The anchor
-      // is "about half of equity in stock" — note this makes a well-capitalized maker a
-      // large holder of the float. Targeting flat inventory instead is more faithful to
-      // a real maker, but it requires the maker to short to keep an ask up, which
-      // destabilized the market in testing — left as a known simplification.
-      const equity = agent.cash + agent.shares * mid;
-      const targetShares = mid > 0 ? equity / 2 / mid : 0;
-      const excess = targetShares > 0 ? (agent.shares - targetShares) / targetShares : 0;
-      const skew = agent.inventorySkew * Math.max(-1, Math.min(1, excess)) * half;
-      const center = mid - skew;
+      // RESERVATION PRICE (Avellaneda–Stoikov). A real maker targets FLAT inventory and
+      // expresses that by shifting the price it quotes around, not by refusing to quote:
+      //     reservation = mid − γ·(q / qRef)·halfSpread
+      // Long (q>0) shifts both quotes down (eager to sell, reluctant to buy); short shifts
+      // them up. The term is LINEAR and deliberately UNBOUNDED, so the further inventory
+      // strays from flat the harder the maker prices to shed it — inventory mean-reverts
+      // on its own. (Clamping it removes that pressure past the clamp, which is what made
+      // earlier versions sit maximally skewed and keep accumulating.)
+      const qRef = Math.max(1, agent.quoteSize * agent.levels * 0.5);
+      const skew = agent.inventorySkew * (agent.shares / qRef) * half;
+      // ANCHOR the reference price to a LAGGING price average, not to its own last print.
+      // Quoting purely around `mid` is self-referential: skew down → it prints lower → it
+      // quotes lower still, a ratchet with nothing to stop it (this drove price to ~0).
+      // The anchor must not be a VALUATION view either — pulling toward fair value turns
+      // the maker into a value trader that accumulates whenever price lags fair, goes
+      // persistently long and runs out of cash to bid with. A slow moving average breaks
+      // the feedback loop (it lags the maker's own prints) while staying opinion-free.
+      const anchor = mid + MM_ANCHOR_PULL * (movingAverage(market.priceHistory, MM_ANCHOR_WINDOW) - mid);
+      const center = Math.max(0.01, anchor - skew);
       // Quote SMALLER when the spread is wide (volatile → more adverse-selection risk):
       // a real maker trims size in fast markets. Gentle — from full size when calm down
       // to ~50% as the adaptive spread hits its cap (a stronger cut spirals volatility).
@@ -283,7 +309,7 @@ export function decideOrder(agent: Agent, market: MarketState): OrderIntent[] {
       // quotes the other side to work back toward flat). Without this a well-capitalized
       // maker will absorb an entire trend until it is broke — and then the book loses a
       // side entirely, which is far worse for the market than a wider spread.
-      const maxInv = agent.quoteSize * agent.levels * 2;
+      const maxInv = agent.quoteSize * agent.levels * 4;
       const canBuy = agent.shares < maxInv;
       const canSell = agent.shares > -maxInv;
       const intents: OrderIntent[] = [];
@@ -384,6 +410,16 @@ export function decideOrder(agent: Agent, market: MarketState): OrderIntent[] {
     case 'speculator':
       // Trades OPTIONS, not the stock — handled in the engine (needs the option chain).
       return [];
+    case 'indexFund': {
+      // Inert between rebalances, and price-INELASTIC when it does trade: it moves toward
+      // its mandate regardless of valuation, in small slices. This is deliberately boring —
+      // its purpose is to HOLD the float, not to trade it.
+      if (market.tick % Math.max(1, agent.rebalanceEvery) !== 0) return [];
+      const drift = agent.targetShares - agent.shares;
+      const size = Math.min(Math.abs(drift), agent.targetShares * agent.maxSliceFrac);
+      if (size < MIN_ORDER) return [];
+      return [{ side: drift > 0 ? 'buy' : 'sell', size }];
+    }
   }
 }
 
@@ -539,6 +575,23 @@ export function explainDecision(agent: Agent, market: MarketState): DecisionExpl
         detail: v === 'hold' ? 'Price flat — nothing to re-hedge.'
           : shortGamma ? `Short gamma: price ${dS > 0 ? 'rose' : 'fell'} → ${v}s in the SAME direction, accelerating the move.`
           : `Long gamma: price ${dS > 0 ? 'rose' : 'fell'} → ${v}s AGAINST the move, pinning toward the strike.`,
+      };
+    }
+    case 'indexFund': {
+      const drift = agent.targetShares - agent.shares;
+      const due = market.tick % Math.max(1, agent.rebalanceEvery) === 0;
+      const v: Verdict = Math.abs(drift) < 0.01 ? 'hold' : drift > 0 ? 'buy' : 'sell';
+      return {
+        rule: 'Passive / index fund — holds a large block of stock and is price-INELASTIC: it trades because money flowed in or out of the fund, not because the stock is cheap or expensive. Inert between scheduled rebalances.',
+        signals: [
+          { label: 'Holds', value: agent.shares.toFixed(0), lean: 0 },
+          { label: 'Mandate', value: agent.targetShares.toFixed(0), lean: 0 },
+          { label: 'Rebalance', value: due ? 'due now' : `every ${agent.rebalanceEvery}t`, lean: 0 },
+        ],
+        verdict: v,
+        detail: v === 'hold'
+          ? 'At its mandate — holding, contributing no order flow.'
+          : `${drift > 0 ? 'Accumulating toward' : 'Trimming toward'} its mandate in slices of up to ${(agent.maxSliceFrac * 100).toFixed(0)}%, ignoring price.`,
       };
     }
     case 'speculator': {

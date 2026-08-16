@@ -8,7 +8,8 @@ export type AgentType =
   | 'panicSeller'
   | 'trader'
   | 'dealer'
-  | 'speculator';
+  | 'speculator'
+  | 'indexFund';
 
 // Trader styles = a weighting over the [value, momentum, meanReversion, sentiment]
 // signals. Different styles = different kinds of people. 'Adaptive' starts balanced
@@ -175,6 +176,25 @@ export interface SpeculatorAgent extends AgentAccount {
   stopLoss: number; // 0
 }
 
+/**
+ * Passive / index fund: holds a large, largely INERT block of stock. It is
+ * price-INELASTIC — it buys because money flowed into the fund, not because the stock is
+ * cheap — and only adjusts on a slow rebalancing schedule. In real markets passive
+ * vehicles hold much of the float while contributing very little order flow, which is
+ * what stops market makers from being the dominant holders and price-setters.
+ */
+export interface IndexFundAgent extends AgentAccount {
+  id: string;
+  name: string;
+  type: 'indexFund';
+  targetShares: number; // mandate size it holds
+  rebalanceEvery: number; // ticks between adjustments (it is inert in between)
+  maxSliceFrac: number; // max fraction of the mandate traded per rebalance
+  activity: number;
+  takeProfit: number; // 0
+  stopLoss: number; // 0
+}
+
 /** Panic seller: capitulates on drawdown/fear, buys back the recovery (weak hands). */
 export interface PanicSellerAgent extends AgentAccount {
   id: string;
@@ -199,7 +219,8 @@ export type Agent =
   | PanicSellerAgent
   | TraderAgent
   | DealerAgent
-  | SpeculatorAgent;
+  | SpeculatorAgent
+  | IndexFundAgent;
 
 /** A record of one executed user order, for the order-history view. */
 export interface UserOrderRecord {
