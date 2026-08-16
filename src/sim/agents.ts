@@ -114,11 +114,14 @@ export function traderSignals(agent: { window: number }, market: MarketState, pr
 }
 export const SIGNAL_NAMES = ['value', 'momentum', 'mean-rev', 'sentiment'];
 
-// A market maker's quote reference is pulled slightly toward a lagging price average
-// rather than being purely its own last print — just enough to break the self-referential
-// ratchet, with no view on value.
-const MM_ANCHOR_PULL = 0.25;
-const MM_ANCHOR_WINDOW = 50;
+// A market maker's quote reference is pulled slightly toward a SHORT price average rather
+// than being purely its own last print — just enough to break the self-referential ratchet,
+// with no view on value. The window is deliberately short: a long average lags badly in a
+// trend, and since it sits BELOW spot in an uptrend it drags every quote down, holding price
+// persistently under a rising fair value. A few ticks is enough to kill the feedback loop
+// without fighting the trend.
+const MM_ANCHOR_PULL = 0.2;
+const MM_ANCHOR_WINDOW = 12;
 
 // Minimum meaningful order size (mirrors the engine's own floor).
 const MIN_ORDER = 0.01;
@@ -188,7 +191,7 @@ export function createAgent(
       // Mostly SHARES, barely any cash: a passive vehicle exists to hold the stock, not
       // to trade it. Its block is what gives the float a realistic owner.
       return {
-        id, name, type, targetShares: (capital * 0.95) / startingPrice, rebalanceEvery: 50, maxSliceFrac: 0.02,
+        id, name, type, targetShares: (capital * 0.95) / startingPrice, rebalanceEvery: 50, maxSliceFrac: 0.02, inflowPerRebalance: 0.004,
         activity: 1, takeProfit: 0, stopLoss: 0,
         ...account,
         ...(allCash ? {} : { cash: capital * 0.05, shares: (capital * 0.95) / startingPrice }),
@@ -415,6 +418,10 @@ export function decideOrder(agent: Agent, market: MarketState): OrderIntent[] {
       // its mandate regardless of valuation, in small slices. This is deliberately boring —
       // its purpose is to HOLD the float, not to trade it.
       if (market.tick % Math.max(1, agent.rebalanceEvery) !== 0) return [];
+      // Passive vehicles receive steady INFLOWS, so the mandate grows over time. This is a
+      // real and persistent source of buying — and it's what lets price follow a rising
+      // fair value, since otherwise the float is locked up and nobody can supply the buyers.
+      agent.targetShares *= 1 + agent.inflowPerRebalance;
       const drift = agent.targetShares - agent.shares;
       const size = Math.min(Math.abs(drift), agent.targetShares * agent.maxSliceFrac);
       if (size < MIN_ORDER) return [];

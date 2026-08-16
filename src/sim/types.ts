@@ -190,6 +190,7 @@ export interface IndexFundAgent extends AgentAccount {
   targetShares: number; // mandate size it holds
   rebalanceEvery: number; // ticks between adjustments (it is inert in between)
   maxSliceFrac: number; // max fraction of the mandate traded per rebalance
+  inflowPerRebalance: number; // fractional growth of the mandate each rebalance (fund inflows)
   activity: number;
   takeProfit: number; // 0
   stopLoss: number; // 0
