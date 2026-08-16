@@ -133,6 +133,8 @@ export class SimulationEngine {
   private pnlSpark = new Map<string, RingBuffer>();
   // ownerId -> peak equity, for the dynamic risk-appetite (drawdown de-risking) factor.
   private peakEquity = new Map<string, number>();
+  // ownerId -> last computed risk appetite, so the UI can READ it without mutating state.
+  private riskScaleById = new Map<string, number>();
 
   // The user is a real account. Buys are cash-limited. Sells are capped to shares
   // held UNLESS shorting is enabled, in which case a cash-collateralized short is
@@ -334,6 +336,7 @@ export class SimulationEngine {
     this.agents = this.agents.filter((a) => a.id !== id);
     this.pnlSpark.delete(id); // free its sparkline ring
     this.peakEquity.delete(id);
+    this.riskScaleById.delete(id);
   }
 
   updateAgentParams(id: string, patch: Record<string, unknown>): void {
@@ -551,6 +554,10 @@ export class SimulationEngine {
           if (ownerId === 'user') this.userOptionCashFlow += payout;
         }
         pos.delete(cid);
+        // Speculators remember what they paid per contract; drop it with the contract,
+        // otherwise a row lingers for every series that ever expired while held.
+        const spec = this.agents.find((a) => a.id === ownerId);
+        if (spec && spec.type === 'speculator') spec.entryPrice.delete(cid);
       }
     }
     this.optionChain = this.optionChain.filter((c) => !dueIds.has(c.id));
@@ -1026,7 +1033,7 @@ export class SimulationEngine {
       let availShares = agent.shares;
       const maxShort = CAN_SHORT.has(agent.type) && px > 0 ? (SHORT_COLLATERAL * agent.cash) / px : 0;
 
-      const risk = this.riskScale(agent, px); // de-risked after losses, restored on recovery
+      const risk = this.updateRiskScale(agent, px); // de-risked after losses, restored on recovery
       for (const intent of intents) {
         let size = intent.size * risk;
         if (intent.side === 'buy') {
@@ -1186,12 +1193,22 @@ export class SimulationEngine {
    * draws down. Multiplies every order size, so a losing agent trades smaller — and
    * recovers its size as equity recovers.
    */
-  riskScale(agent: Agent, px = this.currentPrice): number {
+  private updateRiskScale(agent: Agent, px: number): number {
     const eq = agent.cash + agent.shares * px;
     const peak = Math.max(this.peakEquity.get(agent.id) ?? eq, eq);
     this.peakEquity.set(agent.id, peak);
     const dd = peak > 0 ? Math.max(0, 1 - eq / peak) : 0;
-    return Math.max(RISK_FLOOR, 1 - dd * RISK_DD_SENSITIVITY);
+    const scale = Math.max(RISK_FLOOR, 1 - dd * RISK_DD_SENSITIVITY);
+    this.riskScaleById.set(agent.id, scale);
+    return scale;
+  }
+
+  /**
+   * Read the agent's current risk appetite. PURE — it only reads the value computed
+   * during step(); deriving it on demand would mutate peak-equity state from render.
+   */
+  getRiskScale(id: string): number {
+    return this.riskScaleById.get(id) ?? 1;
   }
 
   /** Bounded PnL history (oldest→newest) for an owner, for a sparkline. */

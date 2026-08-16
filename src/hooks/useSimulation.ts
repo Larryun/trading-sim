@@ -273,7 +273,7 @@ export function useSimulation() {
   const getPnlSpark = useCallback((id: string) => engineRef.current.getPnlSpark(id), []);
 
   // Live risk appetite (1 = full size at an equity high, lower after a drawdown).
-  const getRiskScale = useCallback((a: Agent) => engineRef.current.riskScale(a), []);
+  const getRiskScale = useCallback((id: string) => engineRef.current.getRiskScale(id), []);
 
   const updateAgentParams = useCallback((id: string, patch: Record<string, unknown>) => {
     engineRef.current.updateAgentParams(id, patch);

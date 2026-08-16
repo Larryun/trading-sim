@@ -11,7 +11,7 @@ interface Props {
   removeAgent: (id: string) => void;
   updateAgentParams: (id: string, patch: Record<string, unknown>) => void;
   getPnlSpark: (id: string) => number[];
-  getRiskScale: (a: Agent) => number;
+  getRiskScale: (id: string) => number;
 }
 
 const AGENT_TYPES: AgentType[] = ['noise', 'marketMaker', 'fomoHerd', 'whale', 'panicSeller', 'trader', 'dealer', 'speculator', 'indexFund'];
@@ -124,7 +124,7 @@ export function AgentListPanel({ agents, currentPrice, addAgent, removeAgent, up
                 agent={agent}
                 currentPrice={currentPrice}
                 spark={getPnlSpark(agent.id)}
-                riskScale={getRiskScale(agent)}
+                riskScale={getRiskScale(agent.id)}
                 expanded={expanded === agent.id}
                 onToggle={() => setExpanded((e) => (e === agent.id ? null : agent.id))}
                 onRemove={() => removeAgent(agent.id)}
