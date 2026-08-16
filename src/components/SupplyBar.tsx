@@ -31,9 +31,11 @@ export function SupplyBar({ floatBreakdown }: Props) {
         </div>
         {/* Fixed grid slots so the legend doesn't reflow between one and two lines as the
             numbers gain/lose digits. */}
+        {/* Always render all three entries — a conditional row would appear and disappear
+            as the dealer's hedge crossed zero, changing this panel's height every few ticks. */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '2px 12px', fontSize: 11, color: colors.muted, marginTop: 4, ...tabularNums }}>
           <span style={{ whiteSpace: 'nowrap' }}><span style={{ color: '#60a5fa' }}>■</span> agents {fmt(agents)} ({pct(agents).toFixed(0)}%)</span>
-          {Math.abs(dealer) > 0.01 && <span style={{ whiteSpace: 'nowrap' }}><span style={{ color: '#eab308' }}>■</span> dealer {fmt(dealer)} ({pct(dealer).toFixed(1)}%)</span>}
+          <span style={{ whiteSpace: 'nowrap' }}><span style={{ color: '#eab308' }}>■</span> dealer {fmt(dealer)} ({pct(dealer).toFixed(1)}%)</span>
           <span style={{ whiteSpace: 'nowrap' }}><span style={{ color: colors.user }}>■</span> you {fmt(user)} ({pct(user).toFixed(1)}%)</span>
         </div>
       </div>

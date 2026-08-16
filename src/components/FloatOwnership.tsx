@@ -37,14 +37,19 @@ export function FloatOwnership({
     return list;
   }, [agents, userShares]);
 
-  const shown = segments.filter((s) => s.shares > 0.01);
+  // Show EVERY cohort that exists, including ones at zero or net short. Filtering by
+  // `shares > 0` made entries appear and disappear as holdings crossed zero, which
+  // changed the number of legend rows — and therefore the panel's height — every few
+  // ticks, shifting everything below it. A stable row count is what stops the jitter.
+  const shown = segments;
   const pct = (n: number) => (totalFloat > 0 ? (n / totalFloat) * 100 : 0);
 
   return (
     <div>
       <div style={{ display: 'flex', height: 16, borderRadius: 6, overflow: 'hidden', border: `1px solid ${colors.border}` }}>
         {shown.map((s) => (
-          <div key={s.label} style={{ width: `${pct(s.shares)}%`, background: s.color }} title={`${s.label}: ${Math.round(s.shares).toLocaleString()} (${pct(s.shares).toFixed(1)}%)`} />
+          // Short (negative) holdings contribute no width rather than a negative one.
+          <div key={s.label} style={{ width: `${Math.max(0, pct(s.shares))}%`, background: s.color }} title={`${s.label}: ${Math.round(s.shares).toLocaleString()} (${pct(s.shares).toFixed(1)}%)`} />
         ))}
       </div>
       {/* Fixed-width GRID slots, not flex-wrap: with wrapping, an item jumps between one
@@ -56,7 +61,7 @@ export function FloatOwnership({
           <span key={s.label} style={{ display: 'flex', gap: 5, alignItems: 'baseline', minWidth: 0 }} title={`${s.label}: ${Math.round(s.shares).toLocaleString()}`}>
             <span style={{ color: s.color, flex: '0 0 auto' }}>■</span>
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.label}</span>
-            <span style={{ marginLeft: 'auto', flex: '0 0 auto', color: colors.text }}>{pct(s.shares).toFixed(1)}%</span>
+            <span style={{ marginLeft: 'auto', flex: '0 0 auto', color: s.shares < 0 ? colors.down : colors.text }}>{pct(s.shares).toFixed(1)}%</span>
           </span>
         ))}
       </div>
