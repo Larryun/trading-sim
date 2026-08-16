@@ -3,6 +3,17 @@ import type { RestingOrder, Side, Trade } from './types';
 let nextOrderId = 1;
 let nextTradeId = 1;
 
+// Real exchanges quote on a fixed price grid (a "tick size"), not a continuum.
+// Snapping resting prices to this grid keeps the book to discrete, distinct price
+// levels at any price scale and makes depth aggregation exact (no float-key noise).
+export const TICK_SIZE = 0.01;
+const priceToTick = (price: number): number => Math.round(price / TICK_SIZE);
+const tickToPrice = (tick: number): number => tick * TICK_SIZE;
+/** Snap a price onto the tick grid (never below one tick). */
+export function roundToTick(price: number): number {
+  return Math.max(TICK_SIZE, tickToPrice(priceToTick(price)));
+}
+
 /** One aggregated price level of the book (total size + the portion the user owns). */
 export interface BookLevel {
   price: number;
@@ -66,12 +77,15 @@ export class OrderBook {
    */
   getDepth(maxLevels: number): { bids: BookLevel[]; asks: BookLevel[] } {
     const aggregate = (orders: RestingOrder[]): BookLevel[] => {
+      // Key by integer tick, not the float price, so orders on the same grid level
+      // aggregate exactly (float prices like 100.47000001 won't split a level).
       const levels = new Map<number, BookLevel>();
       for (const o of orders) {
-        const level = levels.get(o.price) ?? { price: o.price, size: 0, userSize: 0 };
+        const tick = priceToTick(o.price);
+        const level = levels.get(tick) ?? { price: tickToPrice(tick), size: 0, userSize: 0 };
         level.size += o.size;
         if (o.ownerId === 'user') level.userSize += o.size;
-        levels.set(o.price, level);
+        levels.set(tick, level);
       }
       return [...levels.values()].slice(0, maxLevels); // orders are pre-sorted best-first
     };
@@ -119,6 +133,8 @@ export class OrderBook {
    * least as good as `price`, then rest any remainder at `price` as liquidity.
    */
   submitLimitOrder(side: Side, size: number, price: number, ownerId: string, tick: number): Trade[] {
+    // Snap the limit price onto the tick grid (real orders can't sit between ticks).
+    price = roundToTick(price);
     const trades = this.matchAgainst(side, size, ownerId, tick, price);
     const filled = trades.reduce((s, t) => s + t.size, 0);
     const remaining = size - filled;
