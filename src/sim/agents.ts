@@ -150,12 +150,12 @@ export function createAgent(
       // so the crowd actually chases rallies instead of waiting for a rare spike.
       return { id, name, type, shortWindow: 3, entryThreshold: 0.002, sentimentGain: 1, convexity: 2, maxBuyFrac: 0.4, activity: 0.5, takeProfit: 0.12, stopLoss: 0, ...account };
     case 'whale':
-      // mandate: +1 accumulate up to targetShares, -1 distribute down to it.
-      // Starts cash-heavy (a whale about to accumulate holds mostly cash), and a
-      // modest default target so it doesn't try to corner the whole float.
+      // Value-timed institution: accumulates up to targetShares while the stock is
+      // undervalued (price below fair by > valueBand), distributes back down while
+      // it's overvalued. Starts cash-heavy (mostly dry powder to deploy).
       return {
         id, name, type, targetShares: 1000, sliceSize: 40, participationJitter: 0.3, impactBudget: 0.008,
-        activity: 0.6, mandate: 1, takeProfit: 0, stopLoss: 0,
+        activity: 0.6, valueBand: 0.03, takeProfit: 0, stopLoss: 0,
         ...account,
         ...(allCash ? {} : { cash: capital * 0.9, shares: (capital * 0.1) / startingPrice }),
       };
@@ -271,28 +271,31 @@ export function decideOrder(agent: Agent, market: MarketState): OrderIntent[] {
       return size > 0 ? [{ side: 'buy', size }] : [];
     }
     case 'whale': {
-      // Execute a large program in low-impact slices. The whale AUTO-CYCLES: it
-      // accumulates up to targetShares, then distributes back down to zero, then
-      // repeats — a fund rotating a position — so it both buys and sells over time
-      // instead of running one one-way program and going dormant. `mandate` is the
-      // current phase (+1 accumulate, -1 distribute); it flips at each boundary.
-      if (agent.mandate >= 0 && agent.shares >= agent.targetShares - MIN_ORDER) agent.mandate = -1;
-      else if (agent.mandate < 0 && agent.shares <= MIN_ORDER) agent.mandate = 1;
-
+      // Value-timed: its DIRECTION comes from valuation (its thesis), and it executes
+      // in small low-impact slices. Accumulate a stake while the stock is cheap vs
+      // fair value, distribute it while rich — i.e. buy low, sell high (this is where
+      // its edge, and its profit, come from). Fairly valued → patient, no trade.
+      const fair = market.fundamentalValue;
+      const disc = fair > 0 ? (fair - price) / fair : 0; // >0 cheap, <0 expensive
       const jitter = 1 + (Math.random() * 2 - 1) * agent.participationJitter;
       const r = pctChange(market.priceHistory, 5); // recent move as an impact proxy
-      if (agent.mandate >= 0) {
+      if (disc > agent.valueBand) {
+        // Undervalued → accumulate toward the max stake.
         const remaining = agent.targetShares - agent.shares;
-        if (remaining < MIN_ORDER) return [];
-        if (r > agent.impactBudget && Math.random() < 0.7) return []; // ran up hard -> throttle buying
+        if (remaining < MIN_ORDER) return []; // stake full
+        if (r > agent.impactBudget && Math.random() < 0.7) return []; // don't chase a spike up
         const size = Math.min(agent.sliceSize * jitter, remaining);
         return size > 0 ? [{ side: 'buy', size }] : [];
       }
-      const excess = agent.shares; // distribute the whole position back down to zero
-      if (excess < MIN_ORDER) return [];
-      if (r < -agent.impactBudget && Math.random() < 0.7) return []; // falling hard -> back off selling
-      const size = Math.min(agent.sliceSize * jitter, excess);
-      return size > 0 ? [{ side: 'sell', size }] : [];
+      if (disc < -agent.valueBand) {
+        // Overvalued → distribute the position (can't short — sells only what it holds).
+        const excess = agent.shares;
+        if (excess < MIN_ORDER) return [];
+        if (r < -agent.impactBudget && Math.random() < 0.7) return []; // don't dump into a crash
+        const size = Math.min(agent.sliceSize * jitter, excess);
+        return size > 0 ? [{ side: 'sell', size }] : [];
+      }
+      return []; // fairly valued — wait
     }
     case 'panicSeller': {
       // Capitulate on drawdown-from-peak or a fear (negative-sentiment) shock,
@@ -396,20 +399,23 @@ export function explainDecision(agent: Agent, market: MarketState): DecisionExpl
       };
     }
     case 'whale': {
-      // Mirror the auto-cycle: accumulate up to target, then distribute down to zero.
-      const acc = !(agent.mandate >= 0 && agent.shares >= agent.targetShares - 0.01)
-        && (agent.mandate >= 0 || agent.shares <= 0.01);
-      const remaining = acc ? agent.targetShares - agent.shares : agent.shares;
-      const v: Verdict = remaining > 0.01 ? (acc ? 'buy' : 'sell') : 'hold';
+      const fair = market.fundamentalValue;
+      const disc = fair > 0 ? (fair - price) / fair : 0; // >0 cheap, <0 expensive
+      const cheap = disc > agent.valueBand;
+      const rich = disc < -agent.valueBand;
+      const v: Verdict = cheap && agent.shares < agent.targetShares - 0.01 ? 'buy'
+        : rich && agent.shares > 0.01 ? 'sell' : 'hold';
       return {
-        rule: 'A large institution rotating a position — accumulates up to its target, then distributes back down, in small slices.',
+        rule: 'A large institution that accumulates when the stock is undervalued and distributes when overvalued — buy low, sell high — in small low-impact slices.',
         signals: [
+          { label: 'Price vs fair', value: `${(disc * 100).toFixed(1)}%`, lean: disc > 0 ? 1 : disc < 0 ? -1 : 0 },
           { label: 'Holds', value: agent.shares.toFixed(0), lean: 0 },
-          { label: 'Target', value: agent.targetShares.toFixed(0), lean: 0 },
-          { label: 'Phase', value: acc ? 'accumulating' : 'distributing', lean: v === 'buy' ? 1 : v === 'sell' ? -1 : 0 },
+          { label: 'Max stake', value: agent.targetShares.toFixed(0), lean: 0 },
         ],
         verdict: v,
-        detail: v === 'hold' ? 'Between phases.' : `${acc ? `Buying toward ${agent.targetShares.toFixed(0)} sh` : 'Selling back down to 0'} at ~${agent.sliceSize} sh/tick, backing off when its own impact is high.`,
+        detail: v === 'buy' ? `Undervalued (>${(agent.valueBand * 100).toFixed(0)}% below fair) → accumulating ~${agent.sliceSize} sh/tick, easing off on spikes.`
+          : v === 'sell' ? `Overvalued (>${(agent.valueBand * 100).toFixed(0)}% above fair) → distributing ~${agent.sliceSize} sh/tick, easing off on crashes.`
+          : 'Price near fair value (or stake already at its limit) — waits.',
       };
     }
     case 'panicSeller': {

@@ -35,10 +35,11 @@ const PARAM_HELP: Record<string, string> = {
   'Sentiment gain': 'How much positive sentiment amplifies its buying.',
   Convexity: 'How much harder it buys as the rally gets more extended.',
   'Max buy (% cash)': 'Most of its remaining cash it will deploy in one buy.',
-  'Target shares': 'Inventory it works toward (accumulate up to / distribute down to).',
+  'Target shares': 'Max stake it builds while the stock is undervalued.',
   'Slice size': 'Base child-order size per tick — splits the program to hide impact.',
   'Participation jitter': 'Random variation on slice size to mask its footprint.',
   'Impact budget': 'Adverse recent move that makes it pause to limit its own impact.',
+  'Value band': 'How far price must sit from fair value before it accumulates (below) or distributes (above).',
   'Peak window': 'Ticks used to track the recent high for drawdown.',
   'Panic threshold': 'Drawdown from the peak that triggers selling.',
   Capitulation: 'Drawdown at which it dumps nearly everything.',
@@ -46,7 +47,6 @@ const PARAM_HELP: Record<string, string> = {
   'Fear trigger': 'Negative-sentiment level that triggers selling on its own.',
   'Re-entry (% cash)': 'Cash redeployed per tick when buying back the recovery.',
   Activity: 'Chance it evaluates and acts on a given tick (staggers order flow).',
-  Mandate: 'Accumulate (buy up to the target) or distribute (sell down to it).',
   'Learning rate': 'How fast it re-weights its signals toward whichever has been predicting returns.',
   'Take profit': 'Sell to lock in gains once up this % above average cost.',
   'Stop loss': 'Sell to cut losses once down this % below average cost.',
@@ -265,8 +265,8 @@ function AgentCard({
                 onChange={(v) => onUpdate({ participationJitter: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
               <Slider label="Impact budget" value={agent.impactBudget} min={0} max={0.05} step={0.001}
                 onChange={(v) => onUpdate({ impactBudget: v })} format={(v) => `${(v * 100).toFixed(1)}%`} />
-              <Slider label="Mandate" value={agent.mandate} min={-1} max={1} step={2}
-                onChange={(v) => onUpdate({ mandate: v })} format={(v) => (v >= 0 ? 'accumulate' : 'distribute')} />
+              <Slider label="Value band" value={agent.valueBand} min={0} max={0.2} step={0.01}
+                onChange={(v) => onUpdate({ valueBand: v })} format={(v) => `±${(v * 100).toFixed(0)}%`} />
               <Slider label="Activity" value={agent.activity} min={0} max={1} step={0.05}
                 onChange={(v) => onUpdate({ activity: v })} format={(v) => `${(v * 100).toFixed(0)}%`} />
             </>

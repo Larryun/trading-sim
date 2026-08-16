@@ -228,10 +228,12 @@ into existence.
   then get caught in the reversal, amplifying both the blow-off and the
   subsequent drop.
 
-- **Whale / large institution** — trades in **large size** with heavy price
-  impact. It **accumulates** (buys quietly over time) or **distributes** (sells
-  into strength), often **splitting orders** to disguise its footprint and limit
-  slippage. *Emergent effect:* one big participant can bend the whole market.
+- **Whale / large institution** — trades in **large size** on a **value thesis**:
+  it **accumulates** a stake while the stock is undervalued (price below fair) and
+  **distributes** it while overvalued — buy low, sell high — patiently, in small
+  **sliced** child orders to disguise its footprint and limit slippage (and it eases
+  off when its own trades are moving the price). *Emergent effect:* one big, patient
+  participant can bend the whole market, and profits from mean-reversion to fair.
 
 - **Panic sellers** — dump holdings when losses mount. *Emergent effect:*
   **capitulation** and **stop-loss cascades** — one wave of selling drops the

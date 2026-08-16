@@ -125,12 +125,12 @@ export interface WhaleAgent extends AgentAccount {
   id: string;
   name: string;
   type: 'whale';
-  targetShares: number; // absolute inventory goal
+  targetShares: number; // max stake it will build when the stock is undervalued
   sliceSize: number; // base child-order size per tick (TWAP/VWAP-style)
   participationJitter: number; // random +/- fraction on slice size (footprint masking)
   impactBudget: number; // adverse recent move that triggers a probabilistic skip
   activity: number;
-  mandate: number; // +1 = accumulate up to targetShares, -1 = distribute down to it
+  valueBand: number; // how far price must sit from fair value before it acts (its thesis)
   takeProfit: number; // 0
   stopLoss: number; // 0
 }
