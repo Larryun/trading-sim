@@ -29,6 +29,15 @@ const NEWS_CLUSTER_BOOST = 5; // how much more likely follow-ups are inside a cl
 // so the market shows realistic post-news drift as the information propagates.
 const FUNDAMENTAL_DIFFUSION = 0.06;
 
+// Fundamentals: fair value is DERIVED, not hand-set — fairValue = EPS × P/E multiple
+// (a Gordon-growth / earnings-multiple valuation). Earnings grow each "quarter" with
+// a random beat/miss surprise; news = changes to earnings expectations (guidance).
+const EARNINGS_PERIOD = 200; // ticks between earnings reports (a "quarter")
+const EARNINGS_GROWTH = 0.002; // baseline earnings growth booked each report (gentle secular drift)
+const EARNINGS_SURPRISE = 0.02; // max random beat/miss per report (±) — kept modest so the fixed-float,
+                                // long-biased agent pool can still track fair value (it can't chase a runaway)
+const VALUATION_MULTIPLE = 20; // price/earnings multiple applied to EPS to get fair value
+
 // Short selling: bearish "view" traders can borrow & sell (shares go negative),
 // collateralized by their cash. If a rising price wipes out that collateral they
 // get margin-called and forced to buy back — the fuel for short squeezes.
@@ -92,11 +101,19 @@ export class SimulationEngine {
   sentimentDecay = Math.pow(0.5, 1 / 20); // ≈ 0.966 (~20-tick half-life)
   sentimentReflexivity = 2; // loop gain: how strongly the recent trend feeds the FAST mood
   fundamentalValue = STARTING_PRICE; // the "true" value; eases toward the target (post-news drift)
-  fundamentalTarget = STARTING_PRICE; // where news has repriced fair value TO (diffuses in gradually)
+  // Fair value is derived from earnings: target = EPS × multiple. EPS starts so the
+  // target equals the starting price; news and earnings reports move EPS, not the
+  // target directly (so fair value is computed, not hand-nudged).
+  valuationMultiple = VALUATION_MULTIPLE;
+  eps = STARTING_PRICE / VALUATION_MULTIPLE; // earnings per share (per quarter)
+  /** Fair value the price diffuses toward = earnings capitalized at the multiple. */
+  get fundamentalTarget(): number {
+    return this.eps * this.valuationMultiple;
+  }
   private newsClusterTicks = 0; // ticks remaining in the current news cluster
-  // Tuned low so the news-driven fundamental stays within reach of the long-only
+  // Tuned low so news (via earnings expectations) stays within reach of the long-only
   // agent pool in BOTH directions (they can't short to chase a crashed fair).
-  fundamentalImpact = 0.012; // fraction the fundamental moves per unit of news sentiment
+  fundamentalImpact = 0.012; // fraction EPS moves per unit of news sentiment (guidance change)
   events: NewsEvent[] = [];
   autoNews = false;
   private nextEventId = 1;
@@ -149,10 +166,11 @@ export class SimulationEngine {
     };
     this.events.push(event);
     if (this.events.length > 100) this.events = this.events.slice(-100);
-    // The news sets a lasting REGIME (slow-decaying newsMood), plus a permanent
-    // repricing of the fundamental that DIFFUSES in over the next ~dozens of ticks.
+    // The news sets a lasting REGIME (slow-decaying newsMood) and revises earnings
+    // expectations (guidance): EPS moves, so fair value = EPS × multiple re-derives
+    // and the price diffuses toward the new level over the next ~dozens of ticks.
     this.newsMood += sentiment;
-    this.fundamentalTarget = Math.max(1, this.fundamentalTarget * (1 + sentiment * this.fundamentalImpact));
+    this.eps = Math.max(0.01, this.eps * (1 + sentiment * this.fundamentalImpact));
     this.newsClusterTicks = NEWS_CLUSTER_TICKS; // news begets follow-up news
     return event;
   }
@@ -320,8 +338,29 @@ export class SimulationEngine {
       for (const a of this.agents) a.cash += a.shares * this.dividendPerShare;
       this.user.cash += this.user.shares * this.dividendPerShare;
       this.totalDividendsPaid += this.sharesOutstanding * this.dividendPerShare;
+      // Ex-dividend: the payout leaves the company, so the price drops by the dividend
+      // and fair value follows. Book it as a reduction in EPS (÷ multiple) so the
+      // derived target = EPS × multiple stays consistent and dividends don't inflate.
       this.fundamentalValue = Math.max(1, this.fundamentalValue - this.dividendPerShare);
-      this.fundamentalTarget = Math.max(1, this.fundamentalTarget - this.dividendPerShare);
+      this.eps = Math.max(0.01, this.eps - this.dividendPerShare / this.valuationMultiple);
+    }
+
+    // Quarterly earnings report: the objective driver of fair value. Earnings grow a
+    // baseline amount plus a random beat/miss surprise; the surprise also moves the
+    // mood (a beat is bullish) and is logged as a news event.
+    if (this.tick % EARNINGS_PERIOD === 0) {
+      const surprise = (Math.random() * 2 - 1) * EARNINGS_SURPRISE;
+      this.eps = Math.max(0.01, this.eps * (1 + EARNINGS_GROWTH + surprise));
+      const mood = surprise * 40; // beat → bullish regime, miss → bearish
+      this.newsMood += mood;
+      this.events.push({
+        id: this.nextEventId++,
+        tick: this.tick,
+        headline: surprise >= 0 ? `Earnings beat (+${(surprise * 100).toFixed(1)}%)` : `Earnings miss (${(surprise * 100).toFixed(1)}%)`,
+        sentiment: mood,
+      });
+      if (this.events.length > 100) this.events = this.events.slice(-100);
+      this.newsClusterTicks = NEWS_CLUSTER_TICKS;
     }
 
     // Auto-news arrives in lumpy bursts: a low base rate, boosted while a cluster
