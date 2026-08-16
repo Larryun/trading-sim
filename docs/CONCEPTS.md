@@ -257,18 +257,27 @@ price): when price sits below it they accumulate, pulling the market back toward
 fair value; above it they sell. So the market oscillates *around a moving
 fundamental* — overreacting on the way, then converging.
 
-**Mood is more than news — it's reflexive.** Between events, sentiment also feeds
-on *price action itself*: rallies breed optimism, drops breed fear (a bit
-sharper — the **fear asymmetry**). But because agents trade *with* the mood, that
-is a **positive feedback loop** (mood → buying → higher price → more optimism),
-and an unchecked loop would run away and **pin** the mood at its extreme forever.
-Real markets don't do that — euphoria *exhausts* buyers and panic *exhausts*
-sellers. The sim reproduces this with a **self-limiting reflexive gain**: the
-feedback fades to zero as the mood nears its cap, so the extreme is an unstable
-point the mood always falls back from (a **soft ceiling**, not a wall). Left
-alone, sentiment **mean-reverts to neutral** — and how *fast* it fades is the one
-thing the **Mood persistence** control sets, expressed as a **half-life in ticks**
-(a longer half-life = regimes that last longer, still perfectly stable).
+**Mood has two layers.** Sentiment is the sum of a **slow regime** and a **fast
+reaction**, which is what lets news have a *lasting* effect without the mood
+either evaporating instantly or drifting off on its own:
+
+- The **news regime** is the persistent layer. A news event jumps it, and it then
+  **leaks slowly toward neutral** at a **half-life you set** (the *Mood
+  persistence* control, in ticks). Good news therefore stays bullish for a while —
+  a regime, not a blip — which, together with the permanent fundamental shift,
+  gives news a genuine lasting effect on the market.
+- The **fast reaction** is *reflexive* texture: rallies breed optimism, drops breed
+  fear (a bit sharper — the **fear asymmetry**), plus a little random wobble. It
+  decays in a few ticks, so it adds momentum flavor but never becomes the trend.
+
+Because agents trade *with* the mood, reflexivity is a **positive feedback loop**
+(mood → buying → higher price → more optimism) that, unchecked, would run away and
+**pin** the mood at its extreme. Real markets don't — euphoria *exhausts* buyers,
+panic *exhausts* sellers. The sim reproduces this with a **self-limiting gain**
+(the feedback fades to zero as the mood nears its cap) and a **soft ceiling**
+instead of a hard wall, so extremes are unstable points the mood always falls back
+from. Keeping the fear asymmetry in the *fast* layer also means it can't quietly
+bias the long-run mood in either direction, at any persistence setting.
 
 **In the app:** use "Good news" / "Bad news" to inject events manually, or toggle
 **Auto events** for random headlines. The sentiment chart shows the transient

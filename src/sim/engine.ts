@@ -37,8 +37,9 @@ const MAINT_MARGIN = 0.25; // margin call when equity falls below this * short e
 // (fear), and gets jumpier when already excited (volatility clustering).
 const SENTIMENT_REFLEX_WINDOW = 12; // ticks of price action the mood reads (longer = smoother)
 const SENTIMENT_MOOD_NOISE = 0.008; // small random wobble (kept low so mood isn't just noise)
-const SENTIMENT_FEAR_ASYMMETRY = 1.6; // downside moves move sentiment more than up
+const SENTIMENT_FEAR_ASYMMETRY = 1.6; // downside moves move the FAST mood more than up
 const SENTIMENT_CAP = 3; // bound so the reflexive loop can't run away
+const REFLEX_MOOD_DECAY = 0.85; // fast component leaks quickly (~4-tick half-life) so it's texture, not regime
 
 // Dividends inject cash into the market from OUTSIDE the trading system (the
 // company paying shareholders), so the market isn't a closed, zero-sum cash pool.
@@ -76,11 +77,16 @@ export class SimulationEngine {
     tradeCount: 0,
   };
 
+  // Sentiment is TWO components so news creates a lasting regime while reflex/noise
+  // only add short-lived texture (and so the fear asymmetry can't integrate into a
+  // long-run bias). Exposed `sentiment` = soft-clamped sum of the two.
   sentiment = 0;
-  // Persistence = pure leak toward neutral; set by a HALF-LIFE (ticks) so the knob is
-  // stable across its whole range: decay = 0.5^(1/H). Default H = 20 ticks.
+  newsMood = 0; // slow, persistent regime set by news — the LASTING directional effect
+  reflexMood = 0; // fast, mean-reverting reaction to price action + random wobble
+  // Persistence of the NEWS regime = pure leak toward neutral, set by a HALF-LIFE
+  // (ticks) so the knob is stable across its whole range: decay = 0.5^(1/H). Default 20.
   sentimentDecay = Math.pow(0.5, 1 / 20); // ≈ 0.966 (~20-tick half-life)
-  sentimentReflexivity = 2; // loop gain: how strongly the recent trend feeds the mood (headroom bounds it)
+  sentimentReflexivity = 2; // loop gain: how strongly the recent trend feeds the FAST mood
   fundamentalValue = STARTING_PRICE; // the "true" value; eases toward the target (post-news drift)
   fundamentalTarget = STARTING_PRICE; // where news has repriced fair value TO (diffuses in gradually)
   private newsClusterTicks = 0; // ticks remaining in the current news cluster
@@ -139,9 +145,9 @@ export class SimulationEngine {
     };
     this.events.push(event);
     if (this.events.length > 100) this.events = this.events.slice(-100);
-    // Transient reaction (decays now) plus a permanent repricing of the fundamental
-    // that DIFFUSES in over the next ~dozens of ticks (post-news drift), not instantly.
-    this.sentiment += sentiment;
+    // The news sets a lasting REGIME (slow-decaying newsMood), plus a permanent
+    // repricing of the fundamental that DIFFUSES in over the next ~dozens of ticks.
+    this.newsMood += sentiment;
     this.fundamentalTarget = Math.max(1, this.fundamentalTarget * (1 + sentiment * this.fundamentalImpact));
     this.newsClusterTicks = NEWS_CLUSTER_TICKS; // news begets follow-up news
     return event;
@@ -234,29 +240,31 @@ export class SimulationEngine {
     // The fundamental eases toward the news-set target (information diffusing in).
     this.fundamentalValue += (this.fundamentalTarget - this.fundamentalValue) * FUNDAMENTAL_DIFFUSION;
 
-    // Evolve the mood. Because agents trade WITH sentiment, the recent return is
-    // itself ~proportional to sentiment, so reflex feedback is a positive loop; if
-    // its gain and the persistence (decay) both push up, the loop goes unstable and
-    // the mood pins to the cap. The fix (see the sentiment-realism research):
-    //  - a SELF-LIMITING headroom factor (1 - x²) that kills the reflex/noise as the
-    //    mood approaches the cap (buyer/seller exhaustion) — so the extreme is an
-    //    unstable *repeller*, never a sticky wall, for the whole persistence range;
-    //  - persistence is a PURE leak toward neutral (decay), decoupled from loop gain;
-    //  - a SOFT tanh ceiling instead of a hard clamp (a smooth breathing band, not a wall).
+    // Evolve the mood in TWO parts so news lasts, the loop can't run away, and the
+    // fear asymmetry can't bias the long run:
+    //  - newsMood: the persistent regime. News jumps it; it then leaks slowly toward
+    //    neutral at the (adjustable) half-life. This is the LASTING market effect.
+    //  - reflexMood: fast, mean-reverting texture from recent price action + a random
+    //    wobble, with the fear asymmetry. It decays quickly (~4-tick half-life), so it
+    //    adds momentum flavor without becoming a persistent (or biased) drift.
+    // A SELF-LIMITING headroom factor (1 - x²) kills the reflex/noise as the combined
+    // mood nears the cap (buyer/seller exhaustion), so the extreme is an unstable
+    // repeller; the exposed `sentiment` is a SOFT tanh sum (a breathing band, no wall).
+    const x = this.sentiment / SENTIMENT_CAP; // combined mood last tick, normalized to [-1,1]
+    const headroom = Math.max(0, 1 - x * x);
     if (this.priceRing.size > SENTIMENT_REFLEX_WINDOW) {
       const w = this.priceRing.window(SENTIMENT_REFLEX_WINDOW + 1).data;
       const p0 = w[0];
       const ret = p0 > 0 ? (w[w.length - 1] - p0) / p0 : 0;
       let reflex = this.sentimentReflexivity * ret;
       if (ret < 0) reflex *= SENTIMENT_FEAR_ASYMMETRY; // fear moves the mood more than greed
-      const x = this.sentiment / SENTIMENT_CAP; // normalized mood in [-1, 1]
-      reflex *= Math.max(0, 1 - x * x); // headroom: self-reinforcement fades to 0 at the extreme
-      this.sentiment += reflex;
+      this.reflexMood += reflex * headroom;
     }
-    const xn = this.sentiment / SENTIMENT_CAP;
-    this.sentiment += (Math.random() * 2 - 1) * SENTIMENT_MOOD_NOISE * (1 + Math.abs(this.sentiment)) * Math.max(0, 1 - xn * xn);
-    this.sentiment *= this.sentimentDecay; // pure mean reversion toward neutral at rate (1 - decay)
-    this.sentiment = SENTIMENT_CAP * Math.tanh(this.sentiment / SENTIMENT_CAP); // soft ceiling, no flat wall
+    this.reflexMood += (Math.random() * 2 - 1) * SENTIMENT_MOOD_NOISE * (1 + Math.abs(this.sentiment)) * headroom;
+    this.newsMood *= this.sentimentDecay; // slow leak — the lasting regime, half-life from the slider
+    this.reflexMood *= REFLEX_MOOD_DECAY; // fast leak — texture only
+    // Combine into the exposed mood with a soft ceiling (never a flat wall).
+    this.sentiment = SENTIMENT_CAP * Math.tanh((this.newsMood + this.reflexMood) / SENTIMENT_CAP);
     if (Math.abs(this.sentiment) < 0.001) this.sentiment = 0;
 
     const priceWindow = this.priceRing.window(STRATEGY_WINDOW).data;
