@@ -71,14 +71,55 @@ export const AGENT_TYPE_COLORS: Record<AgentType, string> = {
  *   balanced:   trusts all four signals equally, fixed
  *   adaptive:   starts balanced but LEARNS which signals work (old adaptive/AI)
  */
-export const TRADER_STYLES: Record<TraderStyle, { label: string; color: string; weights: number[]; learningRate: number }> = {
-  value: { label: 'Value', color: '#22d3ee', weights: [0.6, 0, 0.2, -0.2], learningRate: 0 },
-  trend: { label: 'Trend', color: '#f59e0b', weights: [0, 0.7, -0.1, 0.2], learningRate: 0 },
-  contrarian: { label: 'Contrarian', color: '#a78bfa', weights: [0.25, -0.15, 0.5, -0.1], learningRate: 0 },
-  news: { label: 'News', color: '#34d399', weights: [0.15, 0.15, 0, 0.7], learningRate: 0 },
-  balanced: { label: 'Balanced', color: '#818cf8', weights: [0.25, 0.25, 0.25, 0.25], learningRate: 0 },
-  adaptive: { label: 'Adaptive', color: '#fb7185', weights: [0.25, 0.25, 0.25, 0.25], learningRate: 0.5 },
+/**
+ * Each style carries its own HORIZON and temperament, not just signal weights. A trend
+ * follower that looks back 10 ticks is a scalper, not a CTA — real trend funds run 50-200
+ * period lookbacks, while event-driven desks react within a few ticks. Giving every style
+ * the same window made them all short-horizon traders wearing different hats.
+ */
+export const TRADER_STYLES: Record<TraderStyle, { label: string; color: string; weights: number[]; learningRate: number; window: number; conviction: number; activity: number }> = {
+  value: { label: 'Value', color: '#22d3ee', weights: [0.6, 0, 0.2, -0.2], learningRate: 0, window: 30, conviction: 10, activity: 0.5 },
+  trend: { label: 'Trend', color: '#f59e0b', weights: [0, 0.7, -0.1, 0.2], learningRate: 0, window: 80, conviction: 12, activity: 0.5 },
+  contrarian: { label: 'Contrarian', color: '#a78bfa', weights: [0.25, -0.15, 0.5, -0.1], learningRate: 0, window: 12, conviction: 10, activity: 0.6 },
+  news: { label: 'News', color: '#34d399', weights: [0.15, 0.15, 0, 0.7], learningRate: 0, window: 6, conviction: 12, activity: 0.8 },
+  balanced: { label: 'Balanced', color: '#818cf8', weights: [0.25, 0.25, 0.25, 0.25], learningRate: 0, window: 20, conviction: 10, activity: 0.6 },
+  adaptive: { label: 'Adaptive', color: '#fb7185', weights: [0.25, 0.25, 0.25, 0.25], learningRate: 0.5, window: 20, conviction: 10, activity: 0.6 },
 };
+
+/**
+ * Per-fund spread around a style's defaults. Two funds running "the same strategy" are not
+ * the same fund: they disagree on lookback, sizing and how often they act. Without this,
+ * N funds of one style are literal CLONES that decide identically every tick — one agent
+ * with N times the capital, whose whole cohort flips at once instead of arguing with itself.
+ */
+const STYLE_JITTER = 0.35;
+
+/**
+ * The most of its book a fund will put into this ONE stock.
+ *
+ * A real fund holds hundreds of names; a single position is a slice of the portfolio, not the
+ * whole thing. Allowing 100% single-name exposure let the winning cohort compound its entire
+ * (growing) equity into the only stock available, and since the float is fixed, "profitable
+ * forever" became "eventually owns the company" — the value cohort settled at ~50% of the
+ * float. Capping single-name weight is what stops a fund's success turning into ownership.
+ *
+ * Deliberately LOOSE (0.85), because tightening it does not buy realism. Measured over 40k
+ * ticks: 0.45 -> value owns 23% but tracking error 37%; 0.70 -> owns 41%, tracking 10% but
+ * 60k liveness falls to 77-86%; 1.00 -> owns 49%, tracking 8%. Active institutions really do
+ * collectively own 40-70% of a large company, so ~45% is NOT the unrealistic part - and
+ * squeezing it lower starves the only cohort anchoring price to earnings. This cap exists so
+ * a fund is not 100% single-name, not as a concentration leash.
+ */
+export const MAX_SINGLE_NAME_EXPOSURE = 0.85;
+
+// Retail flow shape (see the 'noise' case): a standing buy tilt, a shared attention factor
+// so accounts don't cancel each other out, and a large share of passive limit orders.
+const NOISE_BUY_BIAS = 0.04; // ~54/46 buy/sell at neutral sentiment
+const NOISE_CROWD_GAIN = 0.8;
+const NOISE_CROWD_WEIGHT = 0.12;
+const NOISE_LIMIT_SHARE = 0.55;
+const NOISE_LIMIT_OFFSET = 0.001;
+const jitter = (x: number) => x * (1 + (Math.random() * 2 - 1) * STYLE_JITTER);
 
 /** Style-aware display color: traders color by style, everyone else by type. */
 export function agentColor(agent: Agent): string {
@@ -174,7 +215,10 @@ export function createAgent(
       return {
         id, name, type, style,
         weights: [...preset.weights], learningRate: preset.learningRate,
-        conviction: 10, window: 10, activity: 0.6,
+        // Style defaults, spread per fund so same-style funds are peers, not clones.
+        conviction: jitter(preset.conviction),
+        window: Math.max(3, Math.round(jitter(preset.window))),
+        activity: Math.min(1, jitter(preset.activity)),
         lastSignals: [], lastPrice: 0, smoothScore: 0, takeProfit: 0, stopLoss: 0, ...account,
       };
     }
@@ -182,11 +226,12 @@ export function createAgent(
       // A maker manages inventory via quote skew, so the shared TP/SL exit is off.
       // Deep ladders + a volatility-adaptive spread so it widens (charging more) when
       // informed flow is pushing the price around, its defense against adverse selection.
-      return { id, name, type, spreadBps: 12, volSensitivity: 0.8, maxSpreadBps: 100, quoteSize: 300, levels: 12, inventorySkew: 0.15, activity: 0.8, takeProfit: 0, stopLoss: 0, ...account };
+      return { id, name, type, spreadBps: jitter(12), volSensitivity: jitter(0.8), maxSpreadBps: 100, quoteSize: Math.round(jitter(300)), levels: 12, inventorySkew: jitter(0.15), activity: Math.min(1, jitter(0.8)), takeProfit: 0, stopLoss: 0, ...account };
     case 'fomoHerd':
       // Threshold lowered to match the (small) moves a deeply-liquid book produces,
       // so the crowd actually chases rallies instead of waiting for a rare spike.
-      return { id, name, type, shortWindow: 3, entryThreshold: 0.002, sentimentGain: 1, convexity: 2, maxBuyFrac: 0.4, activity: 0.5, takeProfit: 0.12, stopLoss: 0, ...account };
+      // Jittered: an identical crowd acts as one big agent, all piling in on the same tick.
+      return { id, name, type, shortWindow: Math.max(2, Math.round(jitter(3))), entryThreshold: jitter(0.002), sentimentGain: jitter(1), convexity: 2, maxBuyFrac: Math.min(1, jitter(0.4)), activity: Math.min(1, jitter(0.5)), takeProfit: jitter(0.12), stopLoss: 0, ...account };
     case 'whale':
       // Value-timed institution: accumulates up to targetShares while the stock is
       // undervalued (price below fair by > valueBand), distributes back down while
@@ -201,7 +246,7 @@ export function createAgent(
       // Mostly SHARES, barely any cash: a passive vehicle exists to hold the stock, not
       // to trade it. Its block is what gives the float a realistic owner.
       return {
-        id, name, type, ownershipTarget: 0, baseOwnership: 0, flowVol: 0.004, rebalanceEvery: 50, maxSliceFrac: 0.02,
+        id, name, type, ownershipTarget: 0, baseOwnership: 0, flowVol: jitter(0.004), rebalanceEvery: Math.max(5, Math.round(jitter(50))), maxSliceFrac: jitter(0.02),
         activity: 1, takeProfit: 0, stopLoss: 0,
         ...account,
         ...(allCash ? {} : { cash: capital * 0.05, shares: (capital * 0.95) / startingPrice }),
@@ -211,13 +256,15 @@ export function createAgent(
       // own the stock, not traders. Its block is what makes every other cohort's ownership
       // percentage realistic instead of one big fund owning half the company.
       return {
-        id, name, type, trimBand: 0.25, trickleFrac: 0.004, rebalanceEvery: 40,
+        id, name, type, trimBand: jitter(0.25), trickleFrac: jitter(0.004), rebalanceEvery: Math.max(5, Math.round(jitter(40))),
         activity: 1, takeProfit: 0, stopLoss: 0,
         ...account,
         ...(allCash ? {} : { cash: capital * 0.03, shares: (capital * 0.97) / startingPrice }),
       };
     case 'panicSeller':
-      return { id, name, type, peakWindow: 15, panicThreshold: 0.06, capitulationDD: 0.15, baseDumpFrac: 0.4, sentPanic: 0.6, reentryFrac: 0.3, activity: 0.7, takeProfit: 0, stopLoss: 0, ...account };
+      // Jittered for the same reason: real sellers have different pain thresholds, so
+      // capitulation is staggered rather than a single synchronized dump.
+      return { id, name, type, peakWindow: Math.max(4, Math.round(jitter(15))), panicThreshold: jitter(0.06), capitulationDD: jitter(0.15), baseDumpFrac: Math.min(1, jitter(0.4)), sentPanic: jitter(0.6), reentryFrac: Math.min(1, jitter(0.3)), activity: Math.min(1, jitter(0.7)), takeProfit: 0, stopLoss: 0, ...account };
     case 'dealer':
       // A TEST HARNESS for gamma squeezes, not a market participant: it fakes a large
       // short-gamma options book and hedges it aggressively (market orders, every tick,
@@ -230,7 +277,14 @@ export function createAgent(
     case 'speculator':
       // Expresses a directional view through options: buys calls when bullish, puts
       // when bearish (handled in the engine — only when the options market is enabled).
-      return { id, name, type, window: 10, conviction: 0.3, budgetFrac: 0.07, minTicksToExpiry: 60, entryPrice: new Map(), activity: 0.4, takeProfit: 0, stopLoss: 0, ...account };
+      // Seeded ALL-CASH: this agent expresses itself purely through options and never
+      // submits a stock order, so the default half-in-shares seeding left it holding a
+      // position it never chose, never traded, and whose drift swamped its options P&L.
+      return {
+        id, name, type, window: 10, conviction: 0.3, budgetFrac: 0.07, minTicksToExpiry: 60,
+        entryPrice: new Map(), activity: 0.4, takeProfit: 0, stopLoss: 0,
+        ...account, cash: capital, shares: 0, avgCost: 0,
+      };
   }
 }
 
@@ -257,10 +311,24 @@ export function decideOrder(agent: Agent, market: MarketState): OrderIntent[] {
   // Otherwise fall through to the agent's entry/base strategy.
   switch (agent.type) {
     case 'noise': {
-      // Random uninformed flow — a fair coin flip on side.
-      const side: Side = Math.random() < 0.5 ? 'buy' : 'sell';
+      // Uninformed retail flow. NOT a fair coin flip: real retail is persistently
+      // buy-biased (households are net accumulators) and its flow is CORRELATED rather
+      // than independent — everyone piles into the same name at once on attention.
+      // Independent coin flips cancel out across many accounts, contributing volume but
+      // no price pressure, which is not how a retail crowd actually behaves.
+      const crowd = Math.tanh(market.sentiment * NOISE_CROWD_GAIN); // shared attention/mood
+      const bias = NOISE_BUY_BIAS + crowd * NOISE_CROWD_WEIGHT;
+      const side: Side = Math.random() < 0.5 + bias ? 'buy' : 'sell';
       const size = Math.random() * agent.maxSize;
-      return size > 0 ? [{ side, size }] : [];
+      if (size <= 0) return [];
+      // Roughly half of real retail orders are LIMIT orders. It matters here: an account
+      // that crosses the spread on every one of thousands of trades is bled to zero by
+      // the makers, and a dead account stops supplying flow at all.
+      if (Math.random() < NOISE_LIMIT_SHARE) {
+        const off = 1 + (side === 'buy' ? -NOISE_LIMIT_OFFSET : NOISE_LIMIT_OFFSET);
+        return [{ side, size, limitPrice: price * off }];
+      }
+      return [{ side, size }];
     }
     case 'trader': {
       const sig = traderSignals(agent, market, price);
@@ -284,11 +352,13 @@ export function decideOrder(agent: Agent, market: MarketState): OrderIntent[] {
       // Smooth the score so a noisy tick doesn't flip the target — trade the view, not the jitter.
       agent.smoothScore = 0.85 * agent.smoothScore + 0.15 * score;
 
-      // Hold a TARGET exposure ∝ conviction × smoothed score (capped at ±100% of
-      // equity) and rebalance only when the position drifts meaningfully off it — so a
-      // stable view means little trading (no fee bleed), a flip means it reverses.
+      // Hold a TARGET exposure ∝ conviction × smoothed score, bounded by how much of its
+      // book it will commit to a single name, and rebalance only when the position drifts
+      // meaningfully off it — so a stable view means little trading (no fee bleed), a flip
+      // means it reverses.
       const equity = agent.cash + agent.shares * price;
-      const targetExposure = Math.max(-1, Math.min(1, agent.conviction * agent.smoothScore * 0.15));
+      const cap = MAX_SINGLE_NAME_EXPOSURE;
+      const targetExposure = Math.max(-cap, Math.min(cap, agent.conviction * agent.smoothScore * 0.15));
       const desired = price > 0 ? (targetExposure * equity) / price : 0;
       const delta = desired - agent.shares;
       const band = Math.max((equity * 0.1) / Math.max(price, 1), 1); // ~10%-of-equity deadband

@@ -51,15 +51,22 @@ function createEngine(): SimulationEngine {
 
   // — Institutions: the most capital, the fewest names. The value cohort is what
   //   tethers price to the earnings-based fair value (the market's gravity).
-  for (let i = 0; i < 5; i++) engine.addAgent('trader', 1500000, 'value');
+  //   Informed capital is DIVERSIFIED across strategies, not concentrated in one. When 96%
+  //   of it was value (5 x 1.5M vs 320k for everything else), that single cohort was the
+  //   only force with the size to move price, it won consistently, and it compounded into
+  //   owning most of the float. Real markets run value against momentum, growth and
+  //   mean-reversion money that disagree with each other and take the other side.
+  for (let i = 0; i < 5; i++) engine.addAgent('trader', 1500000, 'value'); // long-only value
   const whale = engine.addAgent('whale', 1500000); // a fund rotating a large stake on valuation
   engine.updateAgentParams(whale.id, { targetShares: 3000, sliceSize: 60 });
 
-  // — Professional/quant desks: medium capital, distinct edges.
-  engine.addAgent('trader', 120000, 'adaptive'); // a learning multi-signal fund
-  engine.addAgent('trader', 80000, 'trend'); // momentum / CTA
-  engine.addAgent('trader', 60000, 'news'); // event-driven
-  engine.addAgent('trader', 60000, 'contrarian'); // mean-reversion desk
+  // — Professional desks with REAL size, so value has genuine opposition.
+  engine.addAgent('trader', 500000, 'trend'); // managed futures / CTA
+  engine.addAgent('trader', 350000, 'trend'); // a second, faster momentum book
+  engine.addAgent('trader', 400000, 'contrarian'); // stat-arb / mean-reversion desk
+  engine.addAgent('trader', 300000, 'balanced'); // multi-factor quant
+  engine.addAgent('trader', 250000, 'adaptive'); // a learning multi-signal fund
+  engine.addAgent('trader', 200000, 'news'); // event-driven
 
   // — Retail: MANY participants, each individually small. This is the shape that matters —
   //   real retail is ~20% of traded volume spread across a huge number of small accounts,

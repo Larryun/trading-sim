@@ -268,6 +268,28 @@ into existence.
 - **Market maker** — provides liquidity and earns the spread (section 4). *Emergent
   effect:* tighter spreads, smoother fills, and a general damping of volatility.
 
+### Why identical agents are the wrong model
+
+Two funds running "the same strategy" are not the same fund: they disagree about lookback,
+sizing, and how often to act. If they share every parameter they produce identical decisions
+every tick, which makes N funds behave as one fund with N times the capital — the whole
+cohort flips at once instead of arguing with itself, and the market loses the internal
+disagreement that makes prices grind rather than jump. Every archetype's parameters are
+therefore spread ±35% per agent, and each trading style carries its own **horizon**: a trend
+follower looks back 80 ticks (a CTA), an event-driven desk 6, value 30.
+
+### Why uninformed traders don't simply go broke
+
+Uninformed flow loses money to market makers — that is the makers' entire business model, and
+it is correct that it happens here. But *how much* matters: an account that crosses the spread
+on every one of thousands of trades is bled to zero, and a dead account stops supplying flow
+altogether, which quietly drains the market's liquidity over long runs. Real retail avoids
+this partly by using **limit orders** for roughly half its volume, which earns the spread
+instead of paying it. So retail here posts passive limits ~55% of the time, and it is *not* a
+fair coin flip: it carries a standing buy tilt (households are net accumulators) and a shared
+attention factor, so many small accounts don't perfectly cancel each other out the way
+independent coin flips would.
+
 ### Who is in the market, and in what proportion
 
 A realistic pool has to match two *separate* facts, which are easy to confuse: who **owns**
