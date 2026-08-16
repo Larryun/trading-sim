@@ -2,6 +2,7 @@ import { OrderBook } from './orderBook';
 import { AGENT_TYPE_LABELS, TRADER_STYLES, applyTrade, createAgent, decideOrder } from './agents';
 import { randomHeadline } from './news';
 import { RingBuffer } from './ringBuffer';
+import { blackScholes, intrinsicValue, type OptionContract, type OptionType } from './options';
 import type { Agent, AgentAccount, AgentType, MarketState, NewsEvent, Side, Trade, TraderStyle, UserOrderRecord } from './types';
 
 // The engine instance lives in a useRef and is NOT rebuilt by HMR, so editing
@@ -45,6 +46,14 @@ const CONSENSUS_EASE = 0.006; // how fast the market's expected-EPS drifts towar
 const EARNINGS_SURPRISE = 0.02; // max random beat/miss per report (±) — kept modest so the fixed-float,
                                 // long-biased agent pool can still track fair value (it can't chase a runaway)
 const VALUATION_MULTIPLE = 20; // price/earnings multiple applied to EPS to get fair value
+
+// Options market (opt-in). A rolling chain of strikes around spot; the dealer is short
+// whatever the public is long and delta-hedges in the stock — so gamma squeezes emerge
+// from real open interest rather than a slider.
+const TICKS_PER_YEAR = 800; // 4 quarters × 200 ticks — for Black-Scholes time-to-expiry
+const CONTRACT_MULTIPLIER = 100; // shares per contract (like real US options)
+const OPTION_LIFETIME = 400; // ticks until a freshly-issued chain expires (~2 quarters)
+const OPTION_STRIKE_OFFSETS = [-0.1, -0.05, 0, 0.05, 0.1]; // strikes as fractions around spot
 
 // Short selling: bearish "view" traders can borrow & sell (shares go negative),
 // collateralized by their cash. If a rising price wipes out that collateral they
@@ -142,6 +151,18 @@ export class SimulationEngine {
   feeBps = 5;
   totalFeesPaid = 0;
 
+  // Options market (opt-in). The dealer account is short exactly the public's net long
+  // option position and hedges its delta in the stock; it's a real participant (counts
+  // in the float, earns dividends, trades the book).
+  optionsEnabled = false;
+  optionChain: OptionContract[] = [];
+  userOptions = new Map<number, number>(); // contractId -> user net long qty (contracts)
+  optionExpiryTick = 0;
+  optionImpliedVol = 0.5; // annualized vol used to price the chain
+  userOptionCashFlow = 0; // cumulative user cash from options (−premium paid, +premium/payout received)
+  private nextContractId = 1;
+  optionsDealer: AgentAccount = { startingCapital: 0, cash: 0, shares: 0, avgCost: 0, realizedPnl: 0, tradeCount: 0 };
+
   private nextAgentNum: Record<AgentType, number> = {
     noise: 0, marketMaker: 0, fomoHerd: 0, whale: 0, panicSeller: 0, trader: 0, dealer: 0,
   };
@@ -182,7 +203,9 @@ export class SimulationEngine {
   // because every trade settles both sides, so this is constant between
   // add/remove of agents (which issue/retire their initial shares).
   get sharesOutstanding(): number {
-    return this.agents.reduce((s, a) => s + a.shares, 0) + this.user.shares;
+    // Include the options dealer's hedge inventory: it buys those shares FROM other
+    // participants, so counting it keeps the total conserved (it's a real holder).
+    return this.agents.reduce((s, a) => s + a.shares, 0) + this.user.shares + this.optionsDealer.shares;
   }
 
   triggerEvent(sentiment: number, headline?: string): NewsEvent {
@@ -234,6 +257,95 @@ export class SimulationEngine {
 
   cancelUserOrders(): void {
     this.book.cancelOrdersByOwner('user');
+  }
+
+  // ---------------- Options market (opt-in) ----------------
+
+  enableOptions(on: boolean): void {
+    this.optionsEnabled = on;
+    if (on && this.optionChain.length === 0) this.rollOptionChain();
+  }
+
+  private optionTau(): number {
+    return Math.max(1e-4, (this.optionExpiryTick - this.tick) / TICKS_PER_YEAR);
+  }
+
+  /** Issue a fresh chain of calls+puts at strikes around spot, with a new expiry. */
+  private rollOptionChain(): void {
+    const spot = this.book.getLastTradePrice();
+    this.optionChain = [];
+    this.userOptions.clear();
+    this.optionExpiryTick = this.tick + OPTION_LIFETIME;
+    for (const off of OPTION_STRIKE_OFFSETS) {
+      const strike = Math.max(1, Math.round(spot * (1 + off)));
+      for (const type of ['call', 'put'] as OptionType[]) {
+        this.optionChain.push({ id: this.nextContractId++, type, strike, expiryTick: this.optionExpiryTick });
+      }
+    }
+  }
+
+  /** The chain priced right now (Black-Scholes) with the user's position per contract. */
+  getOptionChain(): { id: number; type: OptionType; strike: number; price: number; delta: number; gamma: number; userQty: number }[] {
+    const spot = this.book.getLastTradePrice();
+    const tau = this.optionTau();
+    return this.optionChain.map((c) => {
+      const g = blackScholes(c.type, spot, c.strike, tau, this.optionImpliedVol);
+      return { id: c.id, type: c.type, strike: c.strike, price: g.price, delta: g.delta, gamma: g.gamma, userQty: this.userOptions.get(c.id) ?? 0 };
+    });
+  }
+
+  /** User trades a contract: qty>0 buys to open, qty<0 sells to close (no naked short). */
+  tradeOption(contractId: number, qty: number): void {
+    if (!this.optionsEnabled || qty === 0) return;
+    const c = this.optionChain.find((x) => x.id === contractId);
+    if (!c) return;
+    const spot = this.book.getLastTradePrice();
+    const price = blackScholes(c.type, spot, c.strike, this.optionTau(), this.optionImpliedVol).price;
+    const held = this.userOptions.get(contractId) ?? 0;
+    let q = qty;
+    if (q < 0) q = -Math.min(-q, held); // can't sell more than held
+    if (q > 0) {
+      const perContract = price * CONTRACT_MULTIPLIER;
+      const affordable = perContract > 0 ? Math.floor(this.user.cash / perContract) : 0;
+      q = Math.min(q, affordable);
+      if (q <= 0) { this.lastOrderNote = 'Not enough cash for that option.'; return; }
+    }
+    if (q === 0) return;
+    const premium = q * price * CONTRACT_MULTIPLIER;
+    this.user.cash -= premium; // buy pays premium; sell (q<0) receives it
+    this.optionsDealer.cash += premium; // the dealer writes the other side
+    this.userOptionCashFlow -= premium;
+    this.userOptions.set(contractId, held + q);
+    this.lastOrderNote = `${q > 0 ? 'Bought' : 'Sold'} ${Math.abs(q)} ${c.strike} ${c.type} for $${Math.abs(premium).toFixed(0)}.`;
+  }
+
+  /** Mark-to-market value of the user's open option positions. */
+  get userOptionValue(): number {
+    const spot = this.book.getLastTradePrice();
+    const tau = this.optionTau();
+    let v = 0;
+    for (const c of this.optionChain) {
+      const qty = this.userOptions.get(c.id) ?? 0;
+      if (qty !== 0) v += qty * blackScholes(c.type, spot, c.strike, tau, this.optionImpliedVol).price * CONTRACT_MULTIPLIER;
+    }
+    return v;
+  }
+
+  /** Total user option P&L = net cash put in + current mark value. */
+  get optionPnl(): number {
+    return this.userOptionCashFlow + this.userOptionValue;
+  }
+
+  /** Shares the dealer must hold to be delta-neutral = +(public option delta). */
+  private optionHedgeTarget(): number {
+    const spot = this.book.getLastTradePrice();
+    const tau = this.optionTau();
+    let delta = 0;
+    for (const c of this.optionChain) {
+      const qty = this.userOptions.get(c.id) ?? 0;
+      if (qty !== 0) delta += qty * blackScholes(c.type, spot, c.strike, tau, this.optionImpliedVol).delta * CONTRACT_MULTIPLIER;
+    }
+    return delta;
   }
 
   /**
@@ -340,6 +452,7 @@ export class SimulationEngine {
   private buildRegistry(): Map<string, AgentAccount> {
     const reg = new Map<string, AgentAccount>();
     reg.set('user', this.user);
+    reg.set('optionsDealer', this.optionsDealer);
     for (const a of this.agents) reg.set(a.id, a);
     return reg;
   }
@@ -378,6 +491,7 @@ export class SimulationEngine {
         // the price; it just adds shareholder income. A short (negative shares) OWES it.
         for (const a of this.agents) a.cash += a.shares * perShare;
         this.user.cash += this.user.shares * perShare;
+        this.optionsDealer.cash += this.optionsDealer.shares * perShare; // dealer holds hedge inventory
         this.totalDividendsPaid += this.sharesOutstanding * perShare;
       }
     }
@@ -405,6 +519,22 @@ export class SimulationEngine {
       });
       if (this.events.length > 100) this.events = this.events.slice(-100);
       this.newsClusterTicks = NEWS_CLUSTER_TICKS;
+    }
+
+    // Option expiry: cash-settle every open contract at intrinsic value (the holder is
+    // paid by the dealer), then roll a fresh chain around the current price.
+    if (this.optionsEnabled && this.tick >= this.optionExpiryTick) {
+      const spot = this.book.getLastTradePrice();
+      for (const c of this.optionChain) {
+        const qty = this.userOptions.get(c.id) ?? 0;
+        if (qty !== 0) {
+          const payout = qty * intrinsicValue(c.type, spot, c.strike) * CONTRACT_MULTIPLIER;
+          this.user.cash += payout;
+          this.optionsDealer.cash -= payout;
+          this.userOptionCashFlow += payout;
+        }
+      }
+      this.rollOptionChain();
     }
 
     // The slow mood tide wanders continuously and lingers on one side for a long time
@@ -522,6 +652,20 @@ export class SimulationEngine {
         // Commit the resource so a second intent (e.g. a maker's other quote) can't reuse it.
         if (intent.side === 'buy') availCash -= size * (intent.limitPrice ?? px);
         else availShares -= size;
+      }
+    }
+
+    // Options dealer delta-hedge: rebalance its stock inventory to offset the public's
+    // net option delta. As price moves, that target moves (gamma), so the dealer buys
+    // rallies / sells dips when short gamma — a gamma squeeze that EMERGES from real
+    // open interest and hits the same book as everyone else.
+    if (this.optionsEnabled) {
+      const delta = this.optionHedgeTarget() - this.optionsDealer.shares;
+      if (Math.abs(delta) >= MIN_ORDER) {
+        for (const t of this.book.submitMarketOrder(delta > 0 ? 'buy' : 'sell', Math.abs(delta), 'optionsDealer', this.tick)) {
+          this.settle(t, registry);
+          tickTrades.push(t);
+        }
       }
     }
 
