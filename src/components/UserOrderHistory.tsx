@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import type { UserOrderRecord } from '../sim/types';
 import { colors, mono, tabularNums } from '../ui';
 import { SectionHeaderRow } from './kit';
@@ -6,7 +7,7 @@ interface Props {
   orders: UserOrderRecord[];
 }
 
-export function UserOrderHistory({ orders }: Props) {
+export const UserOrderHistory = memo(function UserOrderHistory({ orders }: Props) {
   return (
     <div>
       <SectionHeaderRow>Your Order History</SectionHeaderRow>
@@ -43,4 +44,4 @@ export function UserOrderHistory({ orders }: Props) {
       </div>
     </div>
   );
-}
+});

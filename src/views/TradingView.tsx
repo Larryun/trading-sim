@@ -128,7 +128,7 @@ export function TradingView() {
         <div style={panel}>
           <AgentListPanel
             agents={sim.agents}
-            currentPrice={sim.currentPrice}
+            currentPrice={sim.panelPrice}
             addAgent={sim.addAgent}
             removeAgent={sim.removeAgent}
             updateAgentParams={sim.updateAgentParams}

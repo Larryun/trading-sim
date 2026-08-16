@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import type { FloatBreakdown } from '../hooks/useSimulation';
 import { colors, tabularNums } from '../ui';
 
@@ -9,7 +10,7 @@ function fmt(n: number): string {
   return Math.round(n).toLocaleString();
 }
 
-export function SupplyBar({ floatBreakdown }: Props) {
+export const SupplyBar = memo(function SupplyBar({ floatBreakdown }: Props) {
   const { total, agents, user, dealer } = floatBreakdown;
   const pct = (n: number) => (total > 0 ? (n / total) * 100 : 0);
 
@@ -41,4 +42,4 @@ export function SupplyBar({ floatBreakdown }: Props) {
       </div>
     </div>
   );
-}
+});

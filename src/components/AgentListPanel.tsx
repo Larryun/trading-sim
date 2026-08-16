@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { memo, useMemo, useState  } from 'react';
 import type { Agent, AgentType, TraderStyle } from '../sim/types';
 import { AGENT_TYPE_LABELS, TRADER_STYLES, agentColor } from '../sim/agents';
 import { colors, tabularNums, fmtMoney, pnlColor } from '../ui';
@@ -65,7 +65,7 @@ const PARAM_HELP: Record<string, string> = {
 const GRID = '1fr 54px 64px 66px 40px 62px 44px'; // name | sh | equity | P&L | tr | spark | actions
 const inputStyle: React.CSSProperties = { background: colors.bg0, color: colors.text, border: `1px solid ${colors.border}`, borderRadius: 6, padding: '5px 7px', fontSize: 12 };
 
-export function AgentListPanel({ agents, currentPrice, addAgent, removeAgent, updateAgentParams, getPnlSpark, getRiskScale }: Props) {
+export const AgentListPanel = memo(function AgentListPanel({ agents, currentPrice, addAgent, removeAgent, updateAgentParams, getPnlSpark, getRiskScale }: Props) {
   const [newType, setNewType] = useState<AgentType>('noise');
   const [newStyle, setNewStyle] = useState<TraderStyle>('value');
   const [capital, setCapital] = useState(20000);
@@ -136,7 +136,7 @@ export function AgentListPanel({ agents, currentPrice, addAgent, removeAgent, up
       })}
     </div>
   );
-}
+});
 
 function AgentRow({ agent, currentPrice, spark, riskScale, expanded, onToggle, onRemove, onUpdate }: {
   agent: Agent; currentPrice: number; spark: number[]; riskScale: number; expanded: boolean;

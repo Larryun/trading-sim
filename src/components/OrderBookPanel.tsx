@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import type { BookLevel } from '../sim/orderBook';
 import { SectionHeaderRow } from './kit';
 import { DepthChart } from './DepthChart';
@@ -8,7 +9,7 @@ interface Props {
   asks: BookLevel[];
 }
 
-export function OrderBookPanel({ bids, asks }: Props) {
+export const OrderBookPanel = memo(function OrderBookPanel({ bids, asks }: Props) {
   const bestBid = bids[0]?.price;
   const bestAsk = asks[0]?.price;
   const spread = bestBid != null && bestAsk != null ? bestAsk - bestBid : null;
@@ -27,4 +28,4 @@ export function OrderBookPanel({ bids, asks }: Props) {
       <DepthChart bids={bids} asks={asks} />
     </div>
   );
-}
+});

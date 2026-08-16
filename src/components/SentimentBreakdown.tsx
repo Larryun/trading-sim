@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { colors, tabularNums, pnlColor } from '../ui';
 import { SectionHeaderRow } from './kit';
 
@@ -54,7 +55,7 @@ function Bar({ label, value, color }: { label: string; value: number; color: str
  * medium news, fast price-action) plus the sentiment×momentum regime and the
  * resulting valuation premium — so sentiment is legible, not a bare number.
  */
-export function SentimentBreakdown({
+export const SentimentBreakdown = memo(function SentimentBreakdown({
   breakdown,
   recentPrices,
   currentPrice,
@@ -101,4 +102,4 @@ export function SentimentBreakdown({
       </div>
     </div>
   );
-}
+});

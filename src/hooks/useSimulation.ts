@@ -88,6 +88,9 @@ export function useSimulation() {
   const [volumeBars, setVolumeBars] = useState<VolumeBar[]>([]);
   const [sentimentSeries, setSentimentSeries] = useState<SentimentPoint[]>([]);
   const [currentPrice, setCurrentPrice] = useState(engineRef.current.currentPrice);
+  // Price snapshot for the interval-gated monitoring panels, so a live per-tick price
+  // doesn't force them all to re-render anyway.
+  const [panelPrice, setPanelPrice] = useState(engineRef.current.currentPrice);
   const [bestBid, setBestBid] = useState<number | null>(engineRef.current.bestBid);
   const [bestAsk, setBestAsk] = useState<number | null>(engineRef.current.bestAsk);
   const [trades, setTrades] = useState(engineRef.current.trades.slice(-50).reverse());
@@ -170,16 +173,27 @@ export function useSimulation() {
 
   const refreshFromEngine = (force = false) => {
     const engine = engineRef.current;
-    setAgents(engine.agents.map((a) => ({ ...a })));
+    // Panels that are MONITORING views (agent table, trade log, order history, option
+    // chain, ownership) are resampled on the chart interval rather than every tick. They
+    // hold hundreds of DOM nodes; re-rendering all of them several times a second is a
+    // large amount of churn for information the eye can't track at that rate. The live
+    // ticker, charts and top-of-book still update every tick.
+    const panelInterval = Math.max(1, barIntervalRef.current);
+    const panelsDue = force || engine.tick % panelInterval === 0;
+    if (panelsDue) {
+      setAgents(engine.agents.map((a) => ({ ...a })));
+      setPanelPrice(engine.currentPrice);
+      setFloatBreakdown(floatOf(engine));
+      setTrades(engine.trades.slice(-50).reverse());
+      setUserOrders(engine.userOrders.slice(-50).reverse());
+    }
     setCurrentPrice(engine.currentPrice);
     setBestBid(engine.bestBid);
     setBestAsk(engine.bestAsk);
-    setTrades(engine.trades.slice(-50).reverse());
     setUser({ ...engine.user });
-    setFloatBreakdown(floatOf(engine));
     setSentiment(engine.sentiment);
     setSentimentBreakdown(engine.sentimentBreakdown);
-    if (engine.optionsEnabled) {
+    if (engine.optionsEnabled && panelsDue) {
       setOptionChain(engine.getOptionChain());
       setOptionPnl(engine.optionPnl);
       setUserOptionValue(engine.userOptionValue);
@@ -190,13 +204,11 @@ export function useSimulation() {
     setFundamentalValue(engine.fundamentalValue);
     setEps(engine.eps);
     setLastUserFill(engine.lastUserFill);
-    setUserOrders(engine.userOrders.slice(-50).reverse());
     setUserRestingOrders(engine.book.countOrdersByOwner('user'));
     // The depth/book views are snapshots of a fast-moving book; refreshing them every
     // tick is unreadable (and wasteful). Sample them on the same interval as the candles,
     // so "Interval" governs the whole chart cadence. `force` covers paused/manual refresh.
-    const interval = Math.max(1, barIntervalRef.current);
-    if (force || engine.tick % interval === 0) {
+    if (panelsDue) {
       setBookDepth(engine.book.getDepth(BOOK_DEPTH));
       setMyLimitOrders(engine.book.getUserOrders());
     }
@@ -377,6 +389,7 @@ export function useSimulation() {
     stepMs,
     user,
     currentPrice,
+    panelPrice,
     fundamentalValue,
     eps,
     valuationMultiple,

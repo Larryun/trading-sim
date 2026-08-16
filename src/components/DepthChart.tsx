@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import type { BookLevel } from '../sim/orderBook';
 import { useContainerWidth } from './useContainerWidth';
 import { colors, mono } from '../ui';
@@ -7,7 +8,7 @@ import { colors, mono } from '../ui';
  * cumulating away from the touch on the left, asks in red on the right, with the
  * spread as the gap in the middle. Taller/steeper walls = deeper liquidity.
  */
-export function DepthChart({ bids, asks, height = 150 }: { bids: BookLevel[]; asks: BookLevel[]; height?: number }) {
+export const DepthChart = memo(function DepthChart({ bids, asks, height = 150 }: { bids: BookLevel[]; asks: BookLevel[]; height?: number }) {
   const [ref, width] = useContainerWidth();
   const PAD_L = 4, PAD_R = 4, PAD_T = 8, PAD_B = 16;
 
@@ -76,4 +77,4 @@ export function DepthChart({ bids, asks, height = 150 }: { bids: BookLevel[]; as
       )}
     </div>
   );
-}
+});

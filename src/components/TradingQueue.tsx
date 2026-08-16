@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import type { RestingUserOrder } from '../sim/orderBook';
 import { colors, tabularNums } from '../ui';
 import { SectionHeaderRow } from './kit';
@@ -6,7 +7,7 @@ import { SectionHeaderRow } from './kit';
  * The user's live order queue: resting limit orders and dormant stop orders (both
  * persist across ticks until they fill / trigger), with a cancel-all affordance.
  */
-export function TradingQueue({ orders, onCancel }: { orders: RestingUserOrder[]; onCancel: () => void }) {
+export const TradingQueue = memo(function TradingQueue({ orders, onCancel }: { orders: RestingUserOrder[]; onCancel: () => void }) {
   const sorted = [...orders].sort((a, b) => b.price - a.price);
   return (
     <div>
@@ -41,4 +42,4 @@ export function TradingQueue({ orders, onCancel }: { orders: RestingUserOrder[];
       )}
     </div>
   );
-}
+});

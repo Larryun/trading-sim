@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { memo, useMemo  } from 'react';
 import { agentColor, agentStyleLabel } from '../sim/agents';
 import type { Agent } from '../sim/types';
 import { colors, tabularNums } from '../ui';
@@ -13,7 +13,7 @@ interface Segment {
  * "Who owns the float?" — a stacked bar of share ownership by strategy (traders
  * split by style), plus the user. Shared between the market and stats views.
  */
-export function FloatOwnership({
+export const FloatOwnership = memo(function FloatOwnership({
   agents,
   currentPrice: _currentPrice,
   totalFloat,
@@ -67,4 +67,4 @@ export function FloatOwnership({
       </div>
     </div>
   );
-}
+});

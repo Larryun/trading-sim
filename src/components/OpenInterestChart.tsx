@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { useContainerWidth } from './useContainerWidth';
 import { colors, mono } from '../ui';
 
@@ -15,7 +16,7 @@ interface Row {
  * pressure concentrates, so these walls are what price tends to accelerate through
  * or pin against.
  */
-export function OpenInterestChart({ rows, spot, height = 150 }: { rows: Row[]; spot: number; height?: number }) {
+export const OpenInterestChart = memo(function OpenInterestChart({ rows, spot, height = 150 }: { rows: Row[]; spot: number; height?: number }) {
   const [ref, width] = useContainerWidth();
   const PAD_T = 14, PAD_B = 18, PAD_L = 4, PAD_R = 4;
   const plotH = height - PAD_T - PAD_B;
@@ -91,4 +92,4 @@ export function OpenInterestChart({ rows, spot, height = 150 }: { rows: Row[]; s
       )}
     </div>
   );
-}
+});
