@@ -132,6 +132,7 @@ export function TradingView() {
             addAgent={sim.addAgent}
             removeAgent={sim.removeAgent}
             updateAgentParams={sim.updateAgentParams}
+            getPnlSpark={sim.getPnlSpark}
           />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
