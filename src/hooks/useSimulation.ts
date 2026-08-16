@@ -88,6 +88,8 @@ export function useSimulation() {
   const [sentimentDecay, setSentimentDecayState] = useState(engineRef.current.sentimentDecay);
   const [running, setRunning] = useState(true);
   const [lastOrderNote, setLastOrderNote] = useState<string | null>(null);
+  const [userCanShort, setUserCanShortState] = useState(false);
+  const [userMargin, setUserMargin] = useState(() => engineRef.current.userMargin);
   const [tickMs, setTickMs] = useState(200);
   const [stepMs, setStepMs] = useState(0); // measured compute time per tick (smoothed)
   const stepEmaRef = useRef(0);
@@ -159,6 +161,7 @@ export function useSimulation() {
     setTotalFeesPaid(engine.totalFeesPaid);
     setRecentPrices(engine.priceRing.window(80).data);
     setLastOrderNote(engine.lastOrderNote);
+    setUserMargin(engine.userMargin);
     rebuildDisplay();
   };
   refreshRef.current = refreshFromEngine;
@@ -256,6 +259,11 @@ export function useSimulation() {
     setSentimentDecayState(v);
   }, []);
 
+  const setUserCanShort = useCallback((on: boolean) => {
+    engineRef.current.userCanShort = on;
+    setUserCanShortState(on);
+  }, []);
+
   const enableOptions = useCallback((on: boolean) => {
     engineRef.current.enableOptions(on);
     setOptionsEnabledState(on);
@@ -303,6 +311,9 @@ export function useSimulation() {
     floatBreakdown,
     lastUserFill,
     lastOrderNote,
+    userCanShort,
+    setUserCanShort,
+    userMargin,
     userOrders,
     userRestingOrders,
     bookDepth,

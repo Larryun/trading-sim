@@ -104,8 +104,9 @@ export class SimulationEngine {
   // ownerId -> bounded ring of (equity − startingCapital) samples, for PnL sparklines.
   private pnlSpark = new Map<string, RingBuffer>();
 
-  // The user is a real account: sells are capped to shares held (no naked
-  // shorting); buys are limited only by available liquidity/float.
+  // The user is a real account. Buys are cash-limited. Sells are capped to shares
+  // held UNLESS shorting is enabled, in which case a cash-collateralized short is
+  // allowed (and can be margin-called / squeezed, exactly like the agents).
   user: AgentAccount = {
     startingCapital: USER_STARTING_CASH,
     cash: USER_STARTING_CASH,
@@ -114,6 +115,7 @@ export class SimulationEngine {
     realizedPnl: 0,
     tradeCount: 0,
   };
+  userCanShort = false; // opt-in (a "margin account"): lets the user sell short
 
   // Sentiment is TWO components so news creates a lasting regime while reflex/noise
   // only add short-lived texture (and so the fear asymmetry can't integrate into a
@@ -194,6 +196,24 @@ export class SimulationEngine {
       news: this.newsMood,
       reflex: this.reflexMood,
       total: this.sentiment,
+    };
+  }
+
+  /** The user's margin/short status, for the positions readout. */
+  get userMargin(): { canShort: boolean; shortShares: number; exposure: number; equity: number; maintenanceReq: number; marginCall: boolean; buyingPower: number; shortCapacity: number } {
+    const p = this.currentPrice;
+    const shortShares = Math.max(0, -this.user.shares);
+    const exposure = shortShares * p;
+    const equity = this.user.cash + this.user.shares * p;
+    return {
+      canShort: this.userCanShort,
+      shortShares,
+      exposure,
+      equity,
+      maintenanceReq: MAINT_MARGIN * exposure,
+      marginCall: shortShares > 0 && equity < MAINT_MARGIN * exposure,
+      buyingPower: Math.max(0, this.user.cash),
+      shortCapacity: this.userCanShort && p > 0 ? (SHORT_COLLATERAL * this.user.cash) / p : 0,
     };
   }
 
@@ -391,9 +411,13 @@ export class SimulationEngine {
     }
     let size = requested;
     if (uo.side === 'sell') {
-      size = Math.min(size, this.user.shares); // no shorting for the user
+      // Sell holdings, plus a cash-collateralized short if the user has enabled it.
+      const maxShort = this.userCanShort && px > 0 ? (SHORT_COLLATERAL * this.user.cash) / px : 0;
+      size = Math.min(size, Math.max(0, this.user.shares + maxShort));
       if (size < MIN_ORDER) {
-        this.lastOrderNote = this.user.shares < MIN_ORDER ? 'You hold no shares to sell.' : null;
+        this.lastOrderNote = this.user.shares < MIN_ORDER
+          ? (this.userCanShort ? 'No short capacity (need cash as collateral).' : 'You hold no shares — enable shorting to sell short.')
+          : null;
         return [];
       }
     } else {
@@ -660,6 +684,22 @@ export class SimulationEngine {
         // Commit the resource so a second intent (e.g. a maker's other quote) can't reuse it.
         if (intent.side === 'buy') availCash -= size * (intent.limitPrice ?? px);
         else availShares -= size;
+      }
+    }
+
+    // User short margin call: if a rising price wipes out the collateral on the user's
+    // short, force-buy it back (a squeeze can catch the user too).
+    if (this.user.shares < -MIN_ORDER) {
+      const p = this.book.getLastTradePrice();
+      const exposure = -this.user.shares * p;
+      const equity = this.user.cash + this.user.shares * p;
+      if (equity < MAINT_MARGIN * exposure) {
+        this.book.cancelOrdersByOwner('user');
+        for (const t of this.book.submitMarketOrder('buy', -this.user.shares, 'user', this.tick)) {
+          this.settle(t, registry);
+          tickTrades.push(t);
+        }
+        this.lastOrderNote = 'Margin call — your short was bought in.';
       }
     }
 

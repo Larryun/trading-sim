@@ -13,6 +13,7 @@ import { SupplyBar } from '../components/SupplyBar';
 import { FloatOwnership } from '../components/FloatOwnership';
 import { UserOrderHistory } from '../components/UserOrderHistory';
 import { OrderBookPanel } from '../components/OrderBookPanel';
+import { TradingQueue } from '../components/TradingQueue';
 import { SentimentBreakdown } from '../components/SentimentBreakdown';
 
 const toggleBtn = (active: boolean): React.CSSProperties => ({
@@ -133,24 +134,28 @@ export function TradingView() {
             updateAgentParams={sim.updateAgentParams}
           />
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={panel}>
             <TradePanel
               submitUserOrder={sim.submitUserOrder}
-              cancelUserOrders={sim.cancelUserOrders}
               user={sim.user}
               currentPrice={sim.currentPrice}
               bestBid={sim.bestBid}
               bestAsk={sim.bestAsk}
-              restingOrders={sim.userRestingOrders}
               unrealizedPnl={sim.unrealizedPnl}
               lastFill={sim.lastUserFill}
               orderNote={sim.lastOrderNote}
+              userCanShort={sim.userCanShort}
+              setUserCanShort={sim.setUserCanShort}
+              userMargin={sim.userMargin}
+              spark={sim.getPnlSpark('user')}
             />
           </div>
-          {/* Order book + your resting orders, split below Your Trades */}
           <div style={panel}>
-            <OrderBookPanel bids={sim.bookDepth.bids} asks={sim.bookDepth.asks} myOrders={sim.myLimitOrders} />
+            <TradingQueue orders={sim.myLimitOrders} onCancel={sim.cancelUserOrders} />
+          </div>
+          <div style={panel}>
+            <OrderBookPanel bids={sim.bookDepth.bids} asks={sim.bookDepth.asks} />
           </div>
         </div>
       </div>
