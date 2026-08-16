@@ -12,6 +12,7 @@ interface Props {
   updateAgentParams: (id: string, patch: Record<string, unknown>) => void;
   getPnlSpark: (id: string) => number[];
   getRiskScale: (id: string) => number;
+  sparkInterval: number; // ticks per sparkline point (= the chart interval)
 }
 
 const AGENT_TYPES: AgentType[] = ['noise', 'marketMaker', 'fomoHerd', 'whale', 'panicSeller', 'trader', 'dealer', 'speculator', 'indexFund'];
@@ -65,7 +66,7 @@ const PARAM_HELP: Record<string, string> = {
 const GRID = '1fr 54px 64px 66px 40px 62px 44px'; // name | sh | equity | P&L | tr | spark | actions
 const inputStyle: React.CSSProperties = { background: colors.bg0, color: colors.text, border: `1px solid ${colors.border}`, borderRadius: 6, padding: '5px 7px', fontSize: 12 };
 
-export const AgentListPanel = memo(function AgentListPanel({ agents, currentPrice, addAgent, removeAgent, updateAgentParams, getPnlSpark, getRiskScale }: Props) {
+export const AgentListPanel = memo(function AgentListPanel({ agents, currentPrice, addAgent, removeAgent, updateAgentParams, getPnlSpark, getRiskScale, sparkInterval }: Props) {
   const [newType, setNewType] = useState<AgentType>('noise');
   const [newStyle, setNewStyle] = useState<TraderStyle>('value');
   const [capital, setCapital] = useState(20000);
@@ -106,7 +107,7 @@ export const AgentListPanel = memo(function AgentListPanel({ agents, currentPric
       {agents.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: GRID, gap: 8, fontSize: 10, color: colors.muted, textTransform: 'uppercase', letterSpacing: 0.4, padding: '0 4px 4px' }}>
           <span>Agent</span><span style={{ textAlign: 'right' }}>Shares</span><span style={{ textAlign: 'right' }}>Equity</span>
-          <span style={{ textAlign: 'right' }}>P&L</span><span style={{ textAlign: 'right' }}>Trd</span><span style={{ textAlign: 'center' }}>Trend</span><span />
+          <span style={{ textAlign: 'right' }}>P&L</span><span style={{ textAlign: 'right' }}>Trd</span><span style={{ textAlign: 'center' }} className="param-tip" data-tip={`P&L trend: 48 points, one per ${sparkInterval}-tick candle (~${48 * sparkInterval} ticks). Filled green above breakeven, red below.`}>Trend {sparkInterval > 1 ? `${sparkInterval}t` : ''}</span><span />
         </div>
       )}
 

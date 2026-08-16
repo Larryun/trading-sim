@@ -140,6 +140,9 @@ export function useSimulation() {
   // without re-subscribing the timer, so keep it in a ref.
   const barIntervalRef = useRef(barInterval);
   barIntervalRef.current = barInterval;
+  // Keep the engine's sparkline sampling on the same cadence as the charts, so each
+  // sparkline point corresponds to one candle rather than a fixed 5-tick grid.
+  engineRef.current.sparkInterval = Math.max(1, barInterval);
 
   // Stable refs so the (deps: []) order handler can see the latest running flag /
   // refresh function without changing identity and re-rendering memoized children.

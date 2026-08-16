@@ -21,10 +21,12 @@ const HISTORY_CAP = 8192;
 const STRATEGY_WINDOW = 256;
 const MAX_TRADES = 500;
 
-// Per-participant PnL sparkline: a small fixed-capacity ring sampled every few ticks,
-// so memory stays flat (≈ SPARK_CAP numbers per owner) no matter how long it runs.
+// Per-participant PnL sparkline: a small fixed-capacity ring, so memory stays flat
+// (≈ SPARK_CAP samples per owner) no matter how long it runs. The sampling CADENCE is set
+// by the UI to match the chart interval (see `sparkInterval`), so one sparkline point
+// equals one candle — the sparkline then spans the same kind of window as the charts
+// instead of a fixed 5-tick grid the display may never resolve.
 const SPARK_CAP = 48;
-const SPARK_INTERVAL = 5;
 
 // News arrives in lumpy bursts, not a constant drizzle: a low base rate, but an
 // event raises the odds of follow-ups for a while (clustering).
@@ -131,6 +133,11 @@ export class SimulationEngine {
   pendingUserOrders: PendingUserOrder[] = [];
   // ownerId -> bounded ring of (equity − startingCapital) samples, for PnL sparklines.
   private pnlSpark = new Map<string, RingBuffer>();
+  // Ticks between sparkline samples. The UI keeps this equal to the chart interval so a
+  // sparkline point == a candle. (Changing it mid-run leaves the existing samples at the
+  // old spacing until the ring rolls over — harmless for a trend line, and far better than
+  // blanking every sparkline on every interval change.)
+  sparkInterval = 5;
   // ownerId -> peak equity, for the dynamic risk-appetite (drawdown de-risking) factor.
   private peakEquity = new Map<string, number>();
   // ownerId -> last computed risk appetite, so the UI can READ it without mutating state.
@@ -1173,7 +1180,7 @@ export class SimulationEngine {
     this.sentimentRing.push(this.sentiment);
 
     // Sample each participant's PnL into its bounded sparkline ring (every few ticks).
-    if (this.tick % SPARK_INTERVAL === 0) {
+    if (this.tick % Math.max(1, this.sparkInterval) === 0) {
       // Include option mark value so the user's sparkline matches the equity shown.
       this.sampleSpark('user', this.user.cash + this.user.shares * px + (this.optionsEnabled ? this.userOptionValue : 0) - this.user.startingCapital);
       for (const a of this.agents) this.sampleSpark(a.id, a.cash + a.shares * px - a.startingCapital);

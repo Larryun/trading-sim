@@ -134,6 +134,7 @@ export function TradingView() {
             updateAgentParams={sim.updateAgentParams}
             getPnlSpark={sim.getPnlSpark}
             getRiskScale={sim.getRiskScale}
+            sparkInterval={sim.barInterval}
           />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
