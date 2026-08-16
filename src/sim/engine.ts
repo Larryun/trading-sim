@@ -55,7 +55,7 @@ const REFLEX_MOOD_DECAY = 0.85; // fast component leaks quickly (~4-tick half-li
 
 // Dividends inject cash into the market from OUTSIDE the trading system (the
 // company paying shareholders), so the market isn't a closed, zero-sum cash pool.
-const DIVIDEND_INTERVAL = 50; // ticks between dividend payments
+// Dividends are paid QUARTERLY (aligned to the earnings cadence), like real companies.
 
 interface PendingUserOrder {
   side: Side;
@@ -118,9 +118,9 @@ export class SimulationEngine {
   autoNews = false;
   private nextEventId = 1;
 
-  // Organic cash inflow: cash paid per share held, every DIVIDEND_INTERVAL ticks.
-  // Tuned to roughly balance the 5bps taker fee outflow so cash drift stays ~0.
-  dividendPerShare = 0.02;
+  // Dividends: a realistic ANNUAL yield, paid QUARTERLY (every EARNINGS_PERIOD ticks)
+  // as yield/100 × price ÷ 4 per share — organic cash entering from outside the market.
+  dividendYieldPct = 2; // ~2%/yr, a typical broad-market yield
   totalDividendsPaid = 0;
 
   // Transaction cost: the taker (aggressor) pays this fraction of notional on every
@@ -175,14 +175,14 @@ export class SimulationEngine {
     return event;
   }
 
-  addAgent(type: AgentType, capital: number, style: TraderStyle = 'balanced'): Agent {
+  addAgent(type: AgentType, capital: number, style: TraderStyle = 'balanced', allCash = false): Agent {
     this.nextAgentNum[type] += 1;
     const id = `agent-${this.nextAgentId++}`;
     // Traders carry their style in the name (e.g. "Value trader #2") so the different
     // personalities are distinguishable in the lists; everything else uses its type label.
     const label = type === 'trader' ? `${TRADER_STYLES[style].label} trader` : AGENT_TYPE_LABELS[type];
     const name = `${label} #${this.nextAgentNum[type]}`;
-    const agent = createAgent(type, capital, this.currentPrice, id, name, style);
+    const agent = createAgent(type, capital, this.currentPrice, id, name, style, allCash);
     // A new participant brings its own shares into the market (its share of the
     // float), so adding an agent grows the float and removing one retires it.
     this.agents.push(agent);
@@ -334,15 +334,17 @@ export class SimulationEngine {
     // system. Realistically the stock drops by the dividend on the ex-div date
     // (cash left the company), so the fundamental falls by the same amount; this
     // keeps dividends from being a permanent upward price inflation.
-    if (this.dividendPerShare > 0 && this.tick % DIVIDEND_INTERVAL === 0) {
-      for (const a of this.agents) a.cash += a.shares * this.dividendPerShare;
-      this.user.cash += this.user.shares * this.dividendPerShare;
-      this.totalDividendsPaid += this.sharesOutstanding * this.dividendPerShare;
-      // Ex-dividend: the payout leaves the company, so the price drops by the dividend
-      // and fair value follows. Book it as a reduction in EPS (÷ multiple) so the
-      // derived target = EPS × multiple stays consistent and dividends don't inflate.
-      this.fundamentalValue = Math.max(1, this.fundamentalValue - this.dividendPerShare);
-      this.eps = Math.max(0.01, this.eps - this.dividendPerShare / this.valuationMultiple);
+    if (this.dividendYieldPct > 0 && this.tick % EARNINGS_PERIOD === 0) {
+      const perShare = (this.dividendYieldPct / 100) * this.book.getLastTradePrice() / 4; // one quarter's worth
+      if (perShare > 1e-4) {
+        // Dividends are paid FROM earnings (external income), so they distribute cash
+        // without reducing future earnings power — fair value (= EPS × multiple) is
+        // unchanged. Value traders keep price anchored to fair, so this doesn't inflate
+        // the price; it just adds shareholder income. A short (negative shares) OWES it.
+        for (const a of this.agents) a.cash += a.shares * perShare;
+        this.user.cash += this.user.shares * perShare;
+        this.totalDividendsPaid += this.sharesOutstanding * perShare;
+      }
     }
 
     // Quarterly earnings report: the objective driver of fair value. Earnings grow a

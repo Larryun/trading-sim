@@ -100,9 +100,10 @@ const MIN_ORDER = 0.01;
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
 
 /**
- * Create an individual agent. Its capital is split 50/50 into cash and a share
- * inventory (valued at the current price) so it can trade in either direction
- * from the very first tick without starting from a biased, all-cash position.
+ * Create an individual agent. By default its capital is split 50/50 into cash and
+ * a share inventory (so the initial seed holds the float and can trade either way).
+ * With `allCash`, it starts with only cash and must BUY its position from the
+ * market — realistic for a new participant joining a running market.
  */
 export function createAgent(
   type: AgentType,
@@ -111,14 +112,15 @@ export function createAgent(
   id: string,
   name: string,
   style: TraderStyle = 'balanced',
+  allCash = false,
 ): Agent {
-  const cash = capital / 2;
-  const shares = capital / 2 / startingPrice;
+  const cash = allCash ? capital : capital / 2;
+  const shares = allCash ? 0 : capital / 2 / startingPrice;
   const account = {
     startingCapital: capital,
     cash,
     shares,
-    avgCost: startingPrice,
+    avgCost: allCash ? 0 : startingPrice,
     realizedPnl: 0,
     tradeCount: 0,
   };
@@ -154,7 +156,8 @@ export function createAgent(
       return {
         id, name, type, targetShares: 1000, sliceSize: 40, participationJitter: 0.3, impactBudget: 0.008,
         activity: 0.6, mandate: 1, takeProfit: 0, stopLoss: 0,
-        ...account, cash: capital * 0.9, shares: (capital * 0.1) / startingPrice,
+        ...account,
+        ...(allCash ? {} : { cash: capital * 0.9, shares: (capital * 0.1) / startingPrice }),
       };
     case 'panicSeller':
       return { id, name, type, peakWindow: 15, panicThreshold: 0.06, capitulationDD: 0.15, baseDumpFrac: 0.4, sentPanic: 0.6, reentryFrac: 0.3, activity: 0.7, takeProfit: 0, stopLoss: 0, ...account };

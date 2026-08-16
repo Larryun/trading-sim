@@ -24,7 +24,7 @@ interface SeedEntry { type: AgentType; capital: number; style?: TraderStyle; par
 interface Config {
   ticks?: number;
   autoNews?: boolean;
-  dividendPerShare?: number;
+  dividendYieldPct?: number;
   feeBps?: number;
   fundamentalImpact?: number;
   sentimentDecay?: number;
@@ -59,7 +59,7 @@ function std(xs: number[]): number {
 function evaluate(cfg: Config) {
   const e = new SimulationEngine();
   e.autoNews = cfg.autoNews ?? true;
-  if (cfg.dividendPerShare != null) e.dividendPerShare = cfg.dividendPerShare;
+  if (cfg.dividendYieldPct != null) e.dividendYieldPct = cfg.dividendYieldPct;
   if (cfg.feeBps != null) e.feeBps = cfg.feeBps;
   if (cfg.fundamentalImpact != null) e.fundamentalImpact = cfg.fundamentalImpact;
   if (cfg.sentimentDecay != null) e.sentimentDecay = cfg.sentimentDecay;

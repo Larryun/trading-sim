@@ -66,6 +66,8 @@ export function useSimulation() {
   const [floatBreakdown, setFloatBreakdown] = useState<FloatBreakdown>(() => floatOf(engineRef.current));
   const [sentiment, setSentiment] = useState(0);
   const [fundamentalValue, setFundamentalValue] = useState(engineRef.current.fundamentalValue);
+  const [eps, setEps] = useState(engineRef.current.eps);
+  const valuationMultiple = engineRef.current.valuationMultiple;
   const [recentPrices, setRecentPrices] = useState<number[]>([]); // recent window for decision explanations
   const [tick, setTick] = useState(0);
   const [totalDividendsPaid, setTotalDividendsPaid] = useState(0);
@@ -76,7 +78,7 @@ export function useSimulation() {
   const [userRestingOrders, setUserRestingOrders] = useState(0);
   const [bookDepth, setBookDepth] = useState<{ bids: BookLevel[]; asks: BookLevel[] }>(() => engineRef.current.book.getDepth(BOOK_DEPTH));
   const [myLimitOrders, setMyLimitOrders] = useState<RestingUserOrder[]>([]);
-  const [dividendPerShare, setDividendState] = useState(engineRef.current.dividendPerShare);
+  const [dividendYieldPct, setDividendState] = useState(engineRef.current.dividendYieldPct);
   const [feeBps, setFeeState] = useState(engineRef.current.feeBps);
   const [sentimentDecay, setSentimentDecayState] = useState(engineRef.current.sentimentDecay);
   const [running, setRunning] = useState(true);
@@ -135,6 +137,7 @@ export function useSimulation() {
     setFloatBreakdown(floatOf(engine));
     setSentiment(engine.sentiment);
     setFundamentalValue(engine.fundamentalValue);
+    setEps(engine.eps);
     setLastUserFill(engine.lastUserFill);
     setUserOrders(engine.userOrders.slice(-50).reverse());
     setUserRestingOrders(engine.book.countOrdersByOwner('user'));
@@ -194,7 +197,9 @@ export function useSimulation() {
   }, []);
 
   const addAgent = useCallback((type: AgentType, capital: number, style?: TraderStyle) => {
-    engineRef.current.addAgent(type, capital, style);
+    // Agents added to a running market start with only cash and must buy their
+    // position from the market (they don't materialize new shares into the float).
+    engineRef.current.addAgent(type, capital, style, true);
     setAgents(engineRef.current.agents.map((a) => ({ ...a })));
     setFloatBreakdown(floatOf(engineRef.current));
   }, []);
@@ -221,8 +226,8 @@ export function useSimulation() {
     setAutoNews(engineRef.current.autoNews);
   }, []);
 
-  const setDividendPerShare = useCallback((v: number) => {
-    engineRef.current.dividendPerShare = v;
+  const setDividendYieldPct = useCallback((v: number) => {
+    engineRef.current.dividendYieldPct = v;
     setDividendState(v);
   }, []);
 
@@ -255,8 +260,8 @@ export function useSimulation() {
     autoNews,
     triggerEvent,
     toggleAutoNews,
-    dividendPerShare,
-    setDividendPerShare,
+    dividendYieldPct,
+    setDividendYieldPct,
     feeBps,
     setFeeBps,
     sentimentDecay,
@@ -276,6 +281,8 @@ export function useSimulation() {
     user,
     currentPrice,
     fundamentalValue,
+    eps,
+    valuationMultiple,
     recentPrices,
     tick,
     totalDividendsPaid,

@@ -63,11 +63,11 @@ export function TradingView() {
           <button style={toggleBtn(sim.chartType === 'line')} onClick={() => sim.setChartType('line')}>Line</button>
         </div>
 
-        <label style={{ fontSize: 13, color: '#bbb', display: 'flex', alignItems: 'center', gap: 8 }} title="Cash paid per share to holders every 50 ticks — fresh money entering the market">
+        <label style={{ fontSize: 13, color: '#bbb', display: 'flex', alignItems: 'center', gap: 8 }} title="Annual dividend yield, paid quarterly (fresh cash entering the market from the company)">
           Dividend
-          <input type="range" min={0} max={1} step={0.02} value={sim.dividendPerShare}
-            onChange={(e) => sim.setDividendPerShare(Number(e.target.value))} />
-          <span style={{ width: 74, color: '#eee' }}>${sim.dividendPerShare.toFixed(2)}/sh</span>
+          <input type="range" min={0} max={6} step={0.5} value={sim.dividendYieldPct}
+            onChange={(e) => sim.setDividendYieldPct(Number(e.target.value))} />
+          <span style={{ width: 74, color: '#eee' }}>{sim.dividendYieldPct.toFixed(1)}%/yr</span>
         </label>
 
         <label style={{ fontSize: 13, color: '#bbb', display: 'flex', alignItems: 'center', gap: 8 }} title="Fee the taker pays per trade (goes to the broker, leaves the market)">
