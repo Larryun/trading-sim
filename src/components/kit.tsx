@@ -69,9 +69,9 @@ export const inputStyle: React.CSSProperties = {
 };
 
 /** A stat tile (label + big mono value) — shared by the Stats and Options views. */
-export function Tile({ label, value, color }: { label: string; value: string; color?: string }) {
+export function Tile({ label, value, color, title }: { label: string; value: string; color?: string; title?: string }) {
   return (
-    <div style={{ ...panelTight, padding: 12 }}>
+    <div title={title} style={{ ...panelTight, padding: 12 }}>
       <div style={{ fontSize: 11, color: colors.muted, marginBottom: 4 }}>{label}</div>
       <div style={{ ...tabularNums, fontSize: 18, fontWeight: 700, color: color ?? colors.text }}>{value}</div>
     </div>
