@@ -8,6 +8,7 @@ import { TradePanel } from '../components/TradePanel';
 import { TradeLog } from '../components/TradeLog';
 import { NewsFeed } from '../components/NewsFeed';
 import { SupplyBar } from '../components/SupplyBar';
+import { FloatOwnership } from '../components/FloatOwnership';
 import { UserOrderHistory } from '../components/UserOrderHistory';
 import { OrderBookPanel } from '../components/OrderBookPanel';
 
@@ -100,6 +101,12 @@ export function TradingView() {
       {/* Share supply */}
       <div style={{ ...panel, marginBottom: 10 }}>
         <SupplyBar floatBreakdown={sim.floatBreakdown} />
+      </div>
+
+      {/* Who owns the float? — ownership by strategy */}
+      <div style={{ ...panel, marginBottom: 10 }}>
+        <h4 style={{ margin: '0 0 8px', fontSize: 13, color: '#ccc' }}>Who owns the float?</h4>
+        <FloatOwnership agents={sim.agents} totalFloat={sim.floatBreakdown.total} userShares={sim.user.shares} />
       </div>
 
       {/* Charts: price on top, buy/sell order flow below */}

@@ -25,7 +25,7 @@ function rowKey(a: Agent): string {
 
 export function StatsView() {
   const sim = useSim();
-  const { agents, currentPrice, fundamentalValue, floatBreakdown, bestBid, bestAsk, tick, totalDividendsPaid, totalFeesPaid, user, stepMs } = sim;
+  const { agents, currentPrice, fundamentalValue, eps, valuationMultiple, floatBreakdown, bestBid, bestAsk, tick, totalDividendsPaid, totalFeesPaid, user, stepMs } = sim;
 
   const rows = useMemo(() => {
     const m = new Map<string, Row>();
@@ -61,7 +61,8 @@ export function StatsView() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
         <Tile label="Tick" value={tick.toLocaleString()} />
         <Tile label="Price" value={`$${currentPrice.toFixed(2)}`} color="#4ade80" />
-        <Tile label="Fair value" value={`$${fundamentalValue.toFixed(2)}`} color="#22d3ee" />
+        <Tile label={`Fair value (EPS×${valuationMultiple})`} value={`$${fundamentalValue.toFixed(2)}`} color="#22d3ee" />
+        <Tile label="EPS" value={`$${eps.toFixed(2)}`} color="#22d3ee" />
         <Tile label="Price vs fair" value={`${gapPct >= 0 ? '+' : ''}${gapPct.toFixed(1)}%`} color={Math.abs(gapPct) < 5 ? '#4ade80' : '#f59e0b'} />
         <Tile label="Spread" value={spread != null ? `$${spread.toFixed(2)}` : '—'} />
         <Tile label="Shares outstanding" value={Math.round(floatBreakdown.total).toLocaleString()} />
@@ -84,18 +85,6 @@ export function StatsView() {
       <div style={{ ...panel, marginBottom: 16 }}>
         <h3 style={{ margin: '0 0 10px', fontSize: 15 }}>Profit &amp; loss by strategy — who's winning?</h3>
         <PnlBars data={pnlData} />
-      </div>
-
-      {/* Float ownership */}
-      <div style={{ ...panel, marginBottom: 16 }}>
-        <h3 style={{ margin: '0 0 10px', fontSize: 15 }}>Who owns the float?</h3>
-        <OwnershipBar
-          segments={[
-            ...rows.map((r) => ({ label: r.label, shares: r.shares, color: r.color })),
-            { label: 'You', shares: user.shares, color: '#a78bfa' },
-          ]}
-          total={floatBreakdown.total}
-        />
       </div>
 
       {/* Per-strategy table */}
@@ -152,28 +141,6 @@ function fmt(v: number): string {
   const abs = Math.abs(v);
   const s = abs >= 1000 ? `${(abs / 1000).toFixed(1)}k` : abs.toFixed(0);
   return `${v >= 0 ? '+' : '-'}$${s}`;
-}
-
-// Horizontal stacked bar of share ownership by strategy.
-function OwnershipBar({ segments, total }: { segments: { label: string; shares: number; color: string }[]; total: number }) {
-  const shown = segments.filter((s) => s.shares > 0.01);
-  const pct = (n: number) => (total > 0 ? (n / total) * 100 : 0);
-  return (
-    <div>
-      <div style={{ display: 'flex', height: 16, borderRadius: 6, overflow: 'hidden', border: '1px solid #2a2a3a' }}>
-        {shown.map((s) => (
-          <div key={s.label} style={{ width: `${pct(s.shares)}%`, background: s.color }} title={`${s.label}: ${Math.round(s.shares).toLocaleString()} (${pct(s.shares).toFixed(1)}%)`} />
-        ))}
-      </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', fontSize: 11, color: '#888', marginTop: 6 }}>
-        {shown.map((s) => (
-          <span key={s.label}>
-            <span style={{ color: s.color }}>■</span> {s.label} {pct(s.shares).toFixed(1)}%
-          </span>
-        ))}
-      </div>
-    </div>
-  );
 }
 
 // Plain-SVG P&L-by-strategy bars (no charting lib), zero baseline in the middle.
