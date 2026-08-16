@@ -37,25 +37,28 @@ export function SectionHeaderRow({ children, right }: { children: React.ReactNod
 }
 
 /**
- * Tiny PnL sparkline. `data` is a bounded series (fixed-capacity ring upstream), so
- * this stays cheap. Auto-scales to its own min/max; a dashed zero line if it straddles 0;
- * line colored green/red by the last value's sign.
+ * Tiny P&L sparkline — money made/lost vs breakeven. `data` is total P&L (equity −
+ * starting capital) as a bounded series (fixed-capacity ring upstream). The baseline
+ * is always **zero** (a dashed breakeven line) and the area between the line and zero
+ * is filled green (in profit) or red (at a loss) — so it reads as P&L, not price.
  */
 export function Sparkline({ data, width = 72, height = 22 }: { data: number[]; width?: number; height?: number }) {
   if (data.length < 2) return <svg width={width} height={height} />;
-  let min = Infinity, max = -Infinity;
+  let min = 0, max = 0; // always include breakeven so 0 is on the chart
   for (const v of data) { if (v < min) min = v; if (v > max) max = v; }
   const span = max - min || 1;
   const x = (i: number) => (i / (data.length - 1)) * (width - 2) + 1;
   const y = (v: number) => height - 1 - ((v - min) / span) * (height - 2);
-  const path = data.map((v, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  const line = data.map((v, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+  const zeroY = y(0);
+  const area = `${line} L${x(data.length - 1).toFixed(1)},${zeroY.toFixed(1)} L${x(0).toFixed(1)},${zeroY.toFixed(1)} Z`;
   const last = data[data.length - 1];
-  const stroke = last > 0 ? colors.up : last < 0 ? colors.down : colors.muted;
-  const zeroInRange = min < 0 && max > 0;
+  const col = last > 0 ? colors.up : last < 0 ? colors.down : colors.muted;
   return (
     <svg width={width} height={height} style={{ display: 'block' }}>
-      {zeroInRange && <line x1={0} y1={y(0)} x2={width} y2={y(0)} stroke={colors.border} strokeDasharray="2 2" />}
-      <path d={path} fill="none" stroke={stroke} strokeWidth={1.25} />
+      <path d={area} fill={col} fillOpacity={0.18} stroke="none" />
+      <line x1={0} y1={zeroY} x2={width} y2={zeroY} stroke={colors.border} strokeDasharray="2 2" />
+      <path d={line} fill="none" stroke={col} strokeWidth={1.25} />
     </svg>
   );
 }
