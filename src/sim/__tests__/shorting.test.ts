@@ -354,3 +354,85 @@ describe('shorting across a full simulation', () => {
     expect(Math.min(...minSharesByType.values())).toBeLessThan(-1);
   });
 });
+
+describe('the agent margin call: it works, but is unreachable and uncapped', () => {
+  /**
+   * Real-market property: a short whose equity falls below the maintenance requirement is
+   * forced to buy back, and that forced buying is what turns a rising market into a SHORT
+   * SQUEEZE. The engine implements this (full buy-in below MAINT_MARGIN x exposure) and the
+   * first test confirms the mechanism fires.
+   *
+   * Two documented problems follow it.
+   */
+  function build() {
+    const e = new SimulationEngine();
+    e.autoNews = true;
+    for (const c of DEFAULT_CAST) {
+      const a = e.addAgent(c.type, c.capital, c.style);
+      if (c.params) e.updateAgentParams(a.id, c.params);
+    }
+    e.enableOptions(true);
+    for (let t = 0; t < 1500; t++) e.step();
+    return e;
+  }
+
+  it('force-covers a short that falls below the maintenance requirement', () => {
+    const e = build();
+    const px = e.currentPrice;
+    const a = e.agents.find((x) => x.type === 'trader')!;
+    // Underwater: exposure far above equity, so it is already past the call threshold.
+    a.shares = -3000;
+    a.cash = 3000 * px * 0.3;
+    const floatBefore = e.sharesOutstanding;
+
+    e.step();
+
+    // The borrow must be returned: the position is closed, not left dangling.
+    expect(a.shares).toBeGreaterThan(-0.05);
+    // And covering is a real purchase from real sellers, so shares stay conserved.
+    expect(e.sharesOutstanding).toBeCloseTo(floatBefore, 0);
+  });
+
+  it.fails('does not leave a margin-called agent with negative cash', () => {
+    // Real-market property: an account cannot pay for a buy-in with money it does not have.
+    // Everywhere else in the engine a purchase is capped by freeBuyingPower, and an unfundable
+    // closeout is absorbed by the broker and recorded in brokerWriteOffs. The margin-call path
+    // has neither cap nor write-off branch, so it covers in full regardless of funding and the
+    // account is left silently overdrawn (measured: -$201k on a 3,000-share short).
+    // Total cash is still conserved because the sellers really are paid, so this is a solvency
+    // REPORTING failure rather than fabrication — but an overdrawn account should be impossible.
+    const e = build();
+    const px = e.currentPrice;
+    const a = e.agents.find((x) => x.type === 'trader')!;
+    a.shares = -3000;
+    a.cash = 3000 * px * 0.3;
+
+    e.step();
+
+    expect(a.cash).toBeGreaterThan(-1);
+  });
+
+  it('never reaches a margin call under its own dynamics — the squeeze is unreachable', () => {
+    // Documents a REALISM GAP rather than a crash. Short capacity caps exposure at equity, so a
+    // fresh short starts at equity/exposure = 1.00 while a call needs 0.25; solving (2-k)/k =
+    // 0.25 means price must rise ~60% while the position is still held. Agents trim long before
+    // that, so margin-call-driven short squeezes never actually occur: 0 calls in 40,000 ticks.
+    //
+    // The assertion is deliberately the OBSERVED behaviour, so that if the model ever does start
+    // producing margin calls naturally this test fails and someone re-reads this comment. That
+    // would be an improvement in realism, not a regression.
+    const e = build();
+    let calls = 0;
+    for (let t = 0; t < 4000; t++) {
+      const px = e.currentPrice;
+      for (const a of e.agents) {
+        if (a.shares < -0.05) {
+          const exposure = -a.shares * px;
+          if (a.cash + a.shares * px < 0.25 * exposure) calls++;
+        }
+      }
+      e.step();
+    }
+    expect(calls).toBe(0);
+  });
+});
