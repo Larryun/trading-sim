@@ -17,6 +17,7 @@
  * Prints a JSON metrics object to stdout.
  */
 import { readFileSync } from 'node:fs';
+import { DEFAULT_CAST } from '../src/sim/defaultCast';
 import { SimulationEngine } from '../src/sim/engine';
 import type { AgentType, TraderStyle } from '../src/sim/types';
 
@@ -32,74 +33,10 @@ interface Config {
   seed?: SeedEntry[];
 }
 
-// Mirrors the app's opening cast (see createEngine in src/hooks/useSimulation.ts).
-const DEFAULT_SEED: SeedEntry[] = [
-  { type: 'marketMaker', capital: 600000 },
-  { type: 'marketMaker', capital: 600000 },
-  { type: 'marketMaker', capital: 600000 },
-  { type: 'marketMaker', capital: 600000 },
-  { type: 'marketMaker', capital: 600000 },
-  { type: 'marketMaker', capital: 600000 },
-  { type: 'indexFund', capital: 1100000 },
-  { type: 'holder', capital: 1400000 },
-  { type: 'holder', capital: 1400000 },
-  { type: 'holder', capital: 1400000 },
-  { type: 'indexFund', capital: 1100000 },
-  { type: 'holder', capital: 1400000 },
-  { type: 'holder', capital: 1400000 },
-  { type: 'holder', capital: 1400000 },  { type: 'trader', capital: 1500000, style: 'value' },
-  { type: 'trader', capital: 1500000, style: 'value' },
-  { type: 'trader', capital: 1500000, style: 'value' },
-  { type: 'trader', capital: 1500000, style: 'value' },
-  { type: 'trader', capital: 1500000, style: 'value' },
-  { type: 'whale', capital: 1500000, params: { targetShares: 3000, sliceSize: 60 } },
-  { type: 'trader', capital: 500000, style: 'trend' },
-  { type: 'trader', capital: 350000, style: 'trend' },
-  { type: 'trader', capital: 400000, style: 'contrarian' },
-  { type: 'trader', capital: 300000, style: 'balanced' },
-  { type: 'trader', capital: 250000, style: 'adaptive' },
-  { type: 'trader', capital: 200000, style: 'news' },
-  { type: 'trader', capital: 60000, style: 'contrarian' },  { type: 'noise', capital: 25000 },
-  { type: 'noise', capital: 25000 },
-  { type: 'noise', capital: 25000 },
-  { type: 'noise', capital: 25000 },
-  { type: 'noise', capital: 25000 },
-  { type: 'noise', capital: 25000 },
-  { type: 'noise', capital: 25000 },
-  { type: 'noise', capital: 25000 },
-  { type: 'noise', capital: 25000 },
-  { type: 'noise', capital: 25000 },
-  { type: 'noise', capital: 25000 },
-  { type: 'noise', capital: 25000 },
-  { type: 'noise', capital: 25000 },
-  { type: 'noise', capital: 25000 },
-  { type: 'noise', capital: 25000 },
-  { type: 'noise', capital: 25000 },
-  { type: 'noise', capital: 25000 },
-  { type: 'noise', capital: 25000 },
-  { type: 'noise', capital: 25000 },
-  { type: 'noise', capital: 25000 },
-  { type: 'noise', capital: 25000 },
-  { type: 'noise', capital: 25000 },
-  { type: 'noise', capital: 25000 },
-  { type: 'noise', capital: 25000 },
-  { type: 'noise', capital: 25000 },
-  { type: 'noise', capital: 25000 },
-  { type: 'noise', capital: 25000 },
-  { type: 'noise', capital: 25000 },
-  { type: 'noise', capital: 25000 },
-  { type: 'noise', capital: 25000 },
-  { type: 'fomoHerd', capital: 28000 },
-  { type: 'fomoHerd', capital: 28000 },
-  { type: 'fomoHerd', capital: 28000 },
-  { type: 'fomoHerd', capital: 28000 },
-  { type: 'panicSeller', capital: 32000 },
-  { type: 'panicSeller', capital: 32000 },
-  { type: 'panicSeller', capital: 32000 },
-  { type: 'panicSeller', capital: 32000 },
-  { type: 'speculator', capital: 150000 },
-  { type: 'speculator', capital: 100000 },
-];
+// The cast is imported, NOT duplicated: a hand-copied seed here silently drifted from the
+// app's (6 holders vs 3, plus a stray contrarian desk), which meant this harness was grading a
+// different market than the app runs. Every tuning decision is made on these numbers.
+const DEFAULT_SEED: SeedEntry[] = DEFAULT_CAST;
 
 function std(xs: number[]): number {
   if (xs.length < 2) return 0;
@@ -126,6 +63,10 @@ function evaluate(cfg: Config) {
   const prices: number[] = [];
   const returns: number[] = [];
   const trackErr: number[] = [];
+  // SIGNED gap, not just |gap|. Absolute tracking error hides direction, and the market turned
+  // out to sit at a persistent one-sided DISCOUNT to fair value rather than oscillating around
+  // it — which absolute error cannot show, and which changes what a fix has to do.
+  const signedGap: number[] = [];
   const spreadBps: number[] = [];
   let liveTicks = 0;
 
@@ -138,7 +79,10 @@ function evaluate(cfg: Config) {
       if (prev > 0) returns.push((p - prev) / prev);
     }
     const fair = e.fundamentalValue;
-    if (fair > 0 && i > ticks / 2) trackErr.push(Math.abs(p - fair) / fair);
+    if (fair > 0 && i > ticks / 2) {
+      trackErr.push(Math.abs(p - fair) / fair);
+      signedGap.push((p - fair) / fair); // + = trading above fair, - = at a discount
+    }
     const bb = e.bestBid, ba = e.bestAsk;
     if (bb != null && ba != null) { liveTicks++; spreadBps.push(((ba - bb) / ((ba + bb) / 2)) * 10000); }
   }
@@ -146,9 +90,19 @@ function evaluate(cfg: Config) {
   const endCash = e.agents.reduce((s, a) => s + a.cash, 0) + e.user.cash;
   const solvent = e.agents.filter((a) => a.cash + a.shares * e.currentPrice > 0).length;
   const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
+  const pct = (xs: number[], q: number) => {
+    if (!xs.length) return 0;
+    const v = [...xs].sort((a, b) => a - b);
+    return v[Math.min(v.length - 1, Math.floor(q * v.length))];
+  };
+  const frac = (xs: number[], f: (x: number) => boolean) => (xs.length ? xs.filter(f).length / xs.length : 0);
 
   return {
     trackingErrorPct: +(mean(trackErr) * 100).toFixed(2),
+    signedGapMeanPct: +(mean(signedGap) * 100).toFixed(2),
+    fracAboveFairPct: +(frac(signedGap, (x) => x > 0.015) * 100).toFixed(1),
+    fracBelowFairPct: +(frac(signedGap, (x) => x < -0.015) * 100).toFixed(1),
+    p90TrackingPct: +(pct(trackErr, 0.9) * 100).toFixed(2),
     volatilityPct: +(std(returns) * 100).toFixed(3),
     avgSpreadBps: +mean(spreadBps).toFixed(1),
     liveFractionPct: +((liveTicks / ticks) * 100).toFixed(1),
