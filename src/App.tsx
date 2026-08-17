@@ -10,7 +10,9 @@ export default function App() {
   // One simulation, shared across views, so /stats reflects the same live market.
   return (
     <SimProvider>
-      <BrowserRouter>
+      {/* Mounted under Vite's base path, so the same build works at the domain root in dev
+          and under /trading-sim/ on GitHub Pages. */}
+      <BrowserRouter basename={import.meta.env.BASE_URL}>
         <NavBar />
         <Routes>
           <Route path="/" element={<TradingView />} />

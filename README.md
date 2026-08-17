@@ -8,13 +8,27 @@ walk. Everything is explainable and tunable live.
 React 19 + Vite + TypeScript. No backend, no data feed — the whole market is simulated in the
 browser.
 
+**Live demo: [larryun.github.io/trading-sim](https://larryun.github.io/trading-sim/)**
+
 ## Run
 
 ```bash
 npm install
 npm run dev      # open the printed localhost URL
 npm run build    # type-check + production build
+npm test         # simulation test suite
 ```
+
+### Deploying
+
+Pushing to `main` builds and publishes to GitHub Pages via
+[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml). It needs **Settings → Pages →
+Source = GitHub Actions** enabled once on the repository.
+
+Because Pages serves the app from a subpath, the workflow builds with `GITHUB_PAGES=1`, which
+sets Vite's `base` to `/trading-sim/` and emits a `404.html` copy of `index.html` — the router
+reads the same base, so deep links like `/trading-sim/stats` survive a refresh on a host that
+has no server-side rewrites.
 
 ## What it models
 
