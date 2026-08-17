@@ -50,7 +50,22 @@ const FUNDAMENTAL_DIFFUSION = 0.06;
 // (a Gordon-growth / earnings-multiple valuation). Earnings grow each "quarter" with
 // a random beat/miss surprise; news = changes to earnings expectations (guidance).
 const EARNINGS_PERIOD = 200; // ticks between earnings reports (a "quarter")
-const EARNINGS_GROWTH = 0.002; // baseline earnings growth booked each report (gentle secular drift)
+/**
+ * Earnings CYCLE, not a secular ramp.
+ *
+ * This was a constant +0.2% booked every report, which made fair value a permanently rising
+ * target. A fixed float of long-biased agents can never catch a target that only goes up, so
+ * price sat at a permanent DISCOUNT — measured below fair on 100% of ticks, above on ~5%. That
+ * single fact is why the sim could not produce a bubble, and why nobody was ever short enough
+ * for a margin call (so short squeezes were unreachable too).
+ *
+ * Real earnings cycle: they expand for a while, then contract in a downturn. Growth is now a
+ * persistent regime that mean-reverts around a modest long-run rate and CAN GO NEGATIVE, so fair
+ * value sometimes falls into a lagging price — which is what lets price overshoot above value.
+ */
+const EARNINGS_TREND_MEAN = 0.0008; // long-run growth per report (a mildly growing company)
+const EARNINGS_TREND_PERSIST = 0.85; // regime stickiness: downturns last several quarters
+const EARNINGS_TREND_VOL = 0.012; // size of a regime shift
 const CONSENSUS_EASE = 0.006; // how fast the market's expected-EPS drifts toward the anticipated next report
 const EARNINGS_SURPRISE = 0.02; // max random beat/miss per report (±) — kept modest so the fixed-float,
                                 // long-biased agent pool can still track fair value (it can't chase a runaway)
@@ -228,6 +243,8 @@ export class SimulationEngine {
   // target directly (so fair value is computed, not hand-nudged).
   valuationMultiple = VALUATION_MULTIPLE;
   eps = STARTING_PRICE / VALUATION_MULTIPLE; // earnings per share (per quarter)
+  /** Current earnings-growth regime (per report). Negative = a contraction. */
+  earningsTrend = EARNINGS_TREND_MEAN;
   consensusEps = STARTING_PRICE / VALUATION_MULTIPLE; // the market's EXPECTED EPS ("priced-in"); surprises are measured vs this
   /** Fair value the price diffuses toward = earnings capitalized at the multiple. */
   get fundamentalTarget(): number {
@@ -1098,14 +1115,19 @@ export class SimulationEngine {
 
     // The market's expected EPS drifts toward the anticipated next report, so growth
     // gets "priced in" ahead of time — an in-line result is then a non-event.
-    this.consensusEps += (this.eps * (1 + EARNINGS_GROWTH) - this.consensusEps) * CONSENSUS_EASE;
+    this.consensusEps += (this.eps * (1 + this.earningsTrend) - this.consensusEps) * CONSENSUS_EASE;
 
     // Quarterly earnings report. What moves the mood is the SURPRISE vs expectations
     // (beat/miss relative to consensus), not the raw number — so a big beat that the
     // market already priced in barely moves it ("buy the rumor, sell the news").
     if (this.tick % EARNINGS_PERIOD === 0) {
+      // Roll the growth regime first: sticky, mean-reverting, and free to turn negative.
+      const shock = (Math.random() * 2 - 1) * EARNINGS_TREND_VOL;
+      this.earningsTrend = EARNINGS_TREND_MEAN
+        + EARNINGS_TREND_PERSIST * (this.earningsTrend - EARNINGS_TREND_MEAN)
+        + shock;
       const innovation = (Math.random() * 2 - 1) * EARNINGS_SURPRISE;
-      const newEps = Math.max(0.01, this.eps * (1 + EARNINGS_GROWTH + innovation));
+      const newEps = Math.max(0.01, this.eps * (1 + this.earningsTrend + innovation));
       const surprise = this.consensusEps > 0 ? (newEps - this.consensusEps) / this.consensusEps : 0; // vs expectations
       this.eps = newEps;
       this.consensusEps = newEps; // expectations reset to the freshly reported number

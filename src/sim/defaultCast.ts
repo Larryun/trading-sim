@@ -81,6 +81,10 @@ export const DEFAULT_CAST: CastEntry[] = [
 
   // — Arbitrageurs: the structural anchor to value. See ArbAgent in types.ts for why this is a
   //   BAND participant and why that matters more than its size.
+  //   FOUR funds, not more. Splitting the same anchoring capacity across 8-12 smaller funds looks
+  //   strictly better at 20k ticks (12.7% of ticks above fair vs 8.8%, liveness 99.9%) and then
+  //   falls apart at 60k, where two-sided quoting drops to 90%/70%/74% for 10/8/6 funds against
+  //   99.6% for four. Do not re-try this without a 60k check.
   ...rep(4, { type: 'arb', capital: 1200000 }),
 
   // — Options speculators express views through calls/puts, and their open interest is what

@@ -132,11 +132,17 @@ const NOISE_LIMIT_OFFSET = 0.001;
 // gap gets pinned; the rate and float caps set how SLOWLY it gets there.
 const ARB_BAND = 0.03;
 const ARB_ADV_FRAC = 0.04; // participation rate; higher drains the book (0.10 -> 81% two-sided)
-// Per-arb position bound. This trades anchor strength against concentration, measured at 40k:
-// 0.08 (cohort up to 32% of float) -> gap -2.8%, 16.7% of ticks above fair, liveness 97.6%
-// 0.05 (up to 20%)                 -> gap -4.8%,  5.4% above, liveness 99.1%   <- chosen
-// 0.03 (up to 12%)                 -> gap -5.7%,  4.1% above, liveness 99.9%
-// Chosen at 0.05 so the anchor does not simply relocate the float concentration it fixed.
+// Per-arb position bound, with 4 arb funds (see defaultCast.ts).
+//
+// Raising aggregate anchor capacity DOES tighten the anchor, but it costs long-run liquidity, and
+// the cost is invisible at 20k. Measured at 60k over 3 seeds — worst-case two-sided quoting in
+// brackets:
+//    4 x 0.05 (20% total):  8.5% of ticks above fair, gap -4.0%, live 99.8% [99.6]  <- chosen
+//   10 x 0.03 (30%):       12.4% above, gap -5.0%, live 96.2% [90.1]
+//    8 x 0.03 (24%):       25.8% above, gap -1.4%, live 89.9% [70.1]
+//    6 x 0.03 (18%):        7.3% above, gap -10.4%, live 91.2% [74.3]
+// The 8x0.03 row is the tempting one — by far the best anchor — and it empties the book 30% of
+// the time. Anchor strength past this point is bought with liquidity.
 const ARB_MAX_FLOAT_FRAC = 0.05;
 const ARB_PASSIVE_OFFSET = 0.002; // posts just behind the touch rather than crossing it
 const jitter = (x: number) => x * (1 + (Math.random() * 2 - 1) * STYLE_JITTER);
