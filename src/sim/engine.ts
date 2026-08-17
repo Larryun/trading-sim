@@ -19,6 +19,8 @@ const USER_STARTING_CASH = 100000;
 // correctly even at the coarsest bar size (otherwise the oldest candle can't drop).
 const HISTORY_CAP = 8192;
 const STRATEGY_WINDOW = 256;
+const LIQUIDATION_ADV_FRAC = 0.08; // share of recent volume a winding-down account may use per tick
+const LIQUIDATION_OFFSET = 0.001;
 const ADV_WINDOW = 200; // ticks of volume history behind `advShares`
 const MAX_TRADES = 500;
 
@@ -269,6 +271,17 @@ export class SimulationEngine {
   optionRate = 0;
   userOptionCashFlow = 0; // cumulative user cash from options (−premium paid, +premium/payout received)
   private nextContractId = 1;
+  /**
+   * Accounts that have been deleted but still hold stock. They are gone from `agents` (and so
+   * from the UI) but keep working their position down in the market until flat.
+   *
+   * The alternatives both fail. Deleting the position outright destroys shares and shrinks the
+   * float. Force-transferring it as a block makes other participants buy inventory they never
+   * wanted with the cash they would otherwise support the price with — beyond ~23% of the float
+   * that tips the market over and price fell to $0.17 against a fair value of $77.
+   * A real fund winds down gradually, and the market absorbs it voluntarily at prices it chooses.
+   */
+  private liquidations: Agent[] = [];
   optionsDealer: AgentAccount = { startingCapital: 0, cash: 0, shares: 0, avgCost: 0, realizedPnl: 0, tradeCount: 0 };
 
   private nextAgentNum: Record<AgentType, number> = {
@@ -350,7 +363,9 @@ export class SimulationEngine {
   get sharesOutstanding(): number {
     // Include the options dealer's hedge inventory: it buys those shares FROM other
     // participants, so counting it keeps the total conserved (it's a real holder).
-    return this.agents.reduce((s, a) => s + a.shares, 0) + this.user.shares + this.optionsDealer.shares;
+    return this.agents.reduce((s, a) => s + a.shares, 0)
+      + this.liquidations.reduce((s, a) => s + a.shares, 0) // still owned until worked off
+      + this.user.shares + this.optionsDealer.shares;
   }
 
   triggerEvent(sentiment: number, headline?: string): NewsEvent {
@@ -405,13 +420,12 @@ export class SimulationEngine {
     }
     this.optionPositions.delete(id);
 
-    // LIQUIDATE the stock position before dropping the account. Simply deleting the agent
-    // destroyed its shares: `sharesOutstanding` sums agent holdings, so the float shrank and
-    // everyone else's ownership percentage silently jumped — a share-conservation break.
-    // What a closing fund really does is SELL its holdings into the market and take its cash
-    // home: the shares stay in circulation (someone else now owns them), the cash leaves.
-    // This trades at market, so a large book really does move the price on the way out.
-    if (acct) this.liquidatePosition(acct, id);
+    // Hand any stock position to the wind-down queue rather than destroying it. Deleting the
+    // agent outright vaporised its shares — `sharesOutstanding` sums holdings, so the float
+    // shrank and everyone else's ownership percentage silently jumped, breaking conservation.
+    // The account leaves the UI immediately; its position is worked off over the following
+    // ticks and the shares stay in circulation throughout.
+    if (acct && Math.abs(acct.shares) >= MIN_ORDER) this.liquidations.push(acct);
 
     this.agents = this.agents.filter((a) => a.id !== id);
     this.pnlSpark.delete(id); // free its sparkline ring
@@ -948,35 +962,44 @@ export class SimulationEngine {
     reg.set('user', this.user);
     reg.set('optionsDealer', this.optionsDealer);
     for (const a of this.agents) reg.set(a.id, a);
+    for (const a of this.liquidations) reg.set(a.id, a);
     return reg;
   }
 
   /**
-   * Unwind an account's whole stock position into the book at market.
+   * Work each winding-down account's position off gradually, then drop it.
    *
-   * Anything the book cannot absorb is transferred as an off-market BLOCK to the market makers
-   * at the last price, cash settled — they are the liquidity providers of last resort, and this
-   * is what keeps shares conserved even when the book is too thin to take the whole position.
-   * Without that fallback a thin book would leave a residue that vanished with the account.
+   * Rate-limited to a slice of recent volume and posted as LIMIT orders, so the exit supplies
+   * liquidity rather than eating the book. This is the same lesson as the arbitrageur and the
+   * options dealer: a large participant that crosses the spread every tick destroys the market
+   * it is trading in.
    */
-  private liquidatePosition(acct: AgentAccount, id: string): void {
-    if (Math.abs(acct.shares) < 1e-9) return;
-    const registry = this.buildRegistry();
-    const side: Side = acct.shares > 0 ? 'sell' : 'buy';
-    for (const t of this.book.submitMarketOrder(side, Math.abs(acct.shares), id, this.tick)) {
-      this.settle(t, registry);
-    }
-    if (Math.abs(acct.shares) < 1e-9) return;
-
+  private stepLiquidations(registry: Map<string, AgentAccount>): Trade[] {
+    if (this.liquidations.length === 0) return [];
+    const out: Trade[] = [];
     const px = Math.max(0.01, this.book.getLastTradePrice());
-    const makers = this.agents.filter((a) => a.type === 'marketMaker' && a.id !== id);
-    if (makers.length === 0) return; // nothing to absorb it; leave the position rather than fake it
-    let residual = acct.shares;
-    const per = residual / makers.length;
-    for (const m of makers) {
-      applyTrade(m, residual > 0 ? 'buy' : 'sell', px, Math.abs(per));
-      applyTrade(acct, residual > 0 ? 'sell' : 'buy', px, Math.abs(per));
+    const rate = Math.max(MIN_ORDER, this.advShares * LIQUIDATION_ADV_FRAC);
+    for (const acct of this.liquidations) {
+      const id = acct.id;
+      this.book.cancelOrdersByOwner(id);
+      const remaining = acct.shares;
+      if (Math.abs(remaining) < MIN_ORDER) continue;
+      const side: Side = remaining > 0 ? 'sell' : 'buy';
+      const size = Math.min(rate, Math.abs(remaining));
+      // Posted just behind the touch: patient, not aggressive.
+      const limit = px * (side === 'sell' ? 1 + LIQUIDATION_OFFSET : 1 - LIQUIDATION_OFFSET);
+      for (const t of this.book.submitLimitOrder(side, size, limit, id, this.tick)) {
+        this.settle(t, registry);
+        out.push(t);
+      }
     }
+    // Retire the ones that are flat; their leftover cash leaves with the fund.
+    this.liquidations = this.liquidations.filter((a) => {
+      if (Math.abs(a.shares) >= MIN_ORDER) return true;
+      this.book.cancelOrdersByOwner(a.id);
+      return false;
+    });
+    return out;
   }
 
   private settle(trade: Trade, reg: Map<string, AgentAccount>): void {
@@ -1270,6 +1293,9 @@ export class SimulationEngine {
     }
 
     // Aggregate this tick's volume (for the volume bars) and record the user's fills.
+    // Deleted-but-not-yet-flat accounts work their positions off here, before volume is tallied.
+    for (const t of this.stepLiquidations(registry)) tickTrades.push(t);
+
     let buyVol = 0;
     let sellVol = 0;
     for (const t of tickTrades) {
