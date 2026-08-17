@@ -11,7 +11,7 @@ function fmt(n: number): string {
 }
 
 export const SupplyBar = memo(function SupplyBar({ floatBreakdown }: Props) {
-  const { total, agents, user, dealer } = floatBreakdown;
+  const { total, agents, user, dealer, liquidating } = floatBreakdown;
   const pct = (n: number) => (total > 0 ? (n / total) * 100 : 0);
 
   return (
@@ -28,6 +28,7 @@ export const SupplyBar = memo(function SupplyBar({ floatBreakdown }: Props) {
               otherwise render as a negative width and silently distort the bar. */}
           <div style={{ width: `${Math.max(0, pct(agents))}%`, background: '#60a5fa' }} title={`Agents: ${fmt(agents)}`} />
           <div style={{ width: `${Math.max(0, pct(dealer))}%`, background: '#eab308' }} title={`Options dealer (hedge inventory): ${fmt(dealer)}`} />
+          <div style={{ width: `${Math.max(0, pct(liquidating))}%`, background: '#f97316' }} title={`Winding down (deleted accounts still selling): ${fmt(liquidating)}`} />
           <div style={{ width: `${Math.max(0, pct(user))}%`, background: colors.user }} title={`You: ${fmt(user)}`} />
         </div>
         {/* Fixed grid slots so the legend doesn't reflow between one and two lines as the
@@ -37,6 +38,7 @@ export const SupplyBar = memo(function SupplyBar({ floatBreakdown }: Props) {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '2px 12px', fontSize: 11, color: colors.muted, marginTop: 4, ...tabularNums }}>
           <span style={{ whiteSpace: 'nowrap' }}><span style={{ color: '#60a5fa' }}>■</span> agents {fmt(agents)} ({pct(agents).toFixed(0)}%)</span>
           <span style={{ whiteSpace: 'nowrap' }}><span style={{ color: '#eab308' }}>■</span> dealer {fmt(dealer)} ({pct(dealer).toFixed(1)}%)</span>
+          <span style={{ whiteSpace: 'nowrap' }}><span style={{ color: '#f97316' }}>■</span> winding down {fmt(liquidating)} ({pct(liquidating).toFixed(1)}%)</span>
           <span style={{ whiteSpace: 'nowrap' }}><span style={{ color: colors.user }}>■</span> you {fmt(user)} ({pct(user).toFixed(1)}%)</span>
         </div>
       </div>

@@ -17,6 +17,10 @@ export interface FloatBreakdown {
   agents: number;
   user: number;
   dealer: number; // the options dealer's hedge inventory (also part of the float)
+  // Shares held by deleted accounts still winding their position down. They are part of the
+  // float but no longer in the visible agent list, so without this the breakdown does not sum
+  // to the total and the ownership bar looks like shares went missing on deletion.
+  liquidating: number;
 }
 
 // Show only the most recent bars so the chart is a readable, fixed-width
@@ -42,6 +46,7 @@ function floatOf(engine: SimulationEngine): FloatBreakdown {
     agents: engine.agents.reduce((s, a) => s + a.shares, 0),
     user: engine.user.shares,
     dealer: engine.optionsDealer.shares,
+    liquidating: engine.liquidatingShares,
   };
 }
 

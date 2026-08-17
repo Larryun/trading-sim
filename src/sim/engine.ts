@@ -376,6 +376,11 @@ export class SimulationEngine {
     return sum / n;
   }
 
+  /** Shares still held by deleted-but-not-yet-flat accounts (see `liquidations`). */
+  get liquidatingShares(): number {
+    return this.liquidations.reduce((s, a) => s + a.shares, 0);
+  }
+
   get sharesOutstanding(): number {
     // Include the options dealer's hedge inventory: it buys those shares FROM other
     // participants, so counting it keeps the total conserved (it's a real holder).
