@@ -268,6 +268,32 @@ into existence.
 - **Market maker** — provides liquidity and earns the spread (section 4). *Emergent
   effect:* tighter spreads, smoother fills, and a general damping of volatility.
 
+### Why price returns to value — and why that is harder than it looks
+
+A market needs something pulling price back toward what the business is worth. The obvious way
+to model that is a value investor: someone who buys more the cheaper the stock gets. That
+demand curve is *sloped*, and against a fixed number of shares a sloped curve does not settle
+at fair value — it settles wherever the discount is big enough to make the value investor want
+exactly the shares that exist. The gap ends up roughly `float / (gain x capital)`.
+
+The consequences are unintuitive and were all visible here. The market sat permanently *below*
+fair value and essentially never above it, so no bubble could ever form. The anchor depended on
+value investors having the most capital, because capital is in the denominator — halve it and
+the discount doubles; cut it enough and there is no equilibrium at all and price falls without
+limit. And because those investors had to be enormous, each one ended up holding a share of the
+company that only an activist would.
+
+What fixes it is a participant with a *vertical* demand curve instead: an **arbitrageur** that
+ignores the stock entirely while price is within a band of the consensus valuation, and then
+trades at full size the moment it leaves that band, however wide the gap gets. Because it will
+trade any amount at the band edge, it pins the gap at the band edge — no matter who has the
+most capital. That is the difference between a spring and a wall.
+
+Two details make it realistic rather than magic. It works **patient limit orders**, so it adds
+liquidity while correcting rather than consuming the book. And it is **rate-limited** to a
+small share of recent volume, so a dislocation takes hundreds of ticks to close — that delay is
+the real "limits to arbitrage" that lets mispricings persist in actual markets.
+
 ### Why identical agents are the wrong model
 
 Two funds running "the same strategy" are not the same fund: they disagree about lookback,

@@ -19,6 +19,7 @@ const USER_STARTING_CASH = 100000;
 // correctly even at the coarsest bar size (otherwise the oldest candle can't drop).
 const HISTORY_CAP = 8192;
 const STRATEGY_WINDOW = 256;
+const ADV_WINDOW = 200; // ticks of volume history behind `advShares`
 const MAX_TRADES = 500;
 
 // Per-participant PnL sparkline: a small fixed-capacity ring, so memory stays flat
@@ -85,7 +86,9 @@ const OPTION_MAX_OI_FRACTION = 0.15;
 // get margin-called and forced to buy back — the fuel for short squeezes.
 // Market makers ARE included: a maker targeting FLAT inventory must be able to go short to
 // keep an offer up, exactly as real makers do.
-const CAN_SHORT = new Set<AgentType>(['trader', 'dealer', 'marketMaker']);
+// Arbitrageurs must be able to short: an anchor that can only correct DISCOUNTS is a one-way
+// bid, and the market could then never be pulled back down from a premium.
+const CAN_SHORT = new Set<AgentType>(['trader', 'dealer', 'marketMaker', 'arb']);
 const SHORT_COLLATERAL = 1; // short exposure may reach this * EQUITY (not cash — see below)
 const MAINT_MARGIN = 0.25; // margin call when equity falls below this * short exposure
 
@@ -269,7 +272,7 @@ export class SimulationEngine {
   optionsDealer: AgentAccount = { startingCapital: 0, cash: 0, shares: 0, avgCost: 0, realizedPnl: 0, tradeCount: 0 };
 
   private nextAgentNum: Record<AgentType, number> = {
-    noise: 0, marketMaker: 0, fomoHerd: 0, whale: 0, panicSeller: 0, trader: 0, dealer: 0, speculator: 0, indexFund: 0, holder: 0,
+    noise: 0, marketMaker: 0, fomoHerd: 0, whale: 0, panicSeller: 0, trader: 0, dealer: 0, speculator: 0, indexFund: 0, holder: 0, arb: 0,
   };
   private nextAgentId = 1;
 
@@ -325,6 +328,25 @@ export class SimulationEngine {
   // float, and liquidity is only what they post. Total shares are conserved
   // because every trade settles both sides, so this is constant between
   // add/remove of agents (which issue/retire their initial shares).
+  /** The observable valuation an arbitrageur trades against: consensus EPS x the multiple. */
+  get consensusValue(): number {
+    return this.consensusEps * this.valuationMultiple;
+  }
+
+  /**
+   * Recent average volume per tick, used to rate-limit the arbitrageur. Real arbitrage cannot
+   * absorb a dislocation instantly — it participates in a fraction of the flow, which is what
+   * makes mispricings take time to close instead of being erased the moment they appear.
+   */
+  get advShares(): number {
+    const buys = this.buyVolRing.window(ADV_WINDOW).data;
+    const sells = this.sellVolRing.window(ADV_WINDOW).data;
+    const n = Math.max(buys.length, sells.length);
+    if (n === 0) return 0;
+    const sum = buys.reduce((a, b) => a + b, 0) + sells.reduce((a, b) => a + b, 0);
+    return sum / n;
+  }
+
   get sharesOutstanding(): number {
     // Include the options dealer's hedge inventory: it buys those shares FROM other
     // participants, so counting it keeps the total conserved (it's a real holder).
@@ -727,7 +749,7 @@ export class SimulationEngine {
     if (!this.optionsEnabled || this.optionChain.length === 0) return;
     const spot = this.book.getLastTradePrice();
     const priceWindow = this.priceRing.window(STRATEGY_WINDOW).data;
-    const market: MarketState = { priceHistory: priceWindow, tick: this.tick, sentiment: this.sentiment, fundamentalValue: this.fundamentalValue, sharesOutstanding: this.sharesOutstanding };
+    const market: MarketState = { priceHistory: priceWindow, tick: this.tick, sentiment: this.sentiment, fundamentalValue: this.fundamentalValue, sharesOutstanding: this.sharesOutstanding, consensusValue: this.consensusValue, advShares: this.advShares };
     for (const a of this.agents) {
       if (a.type !== 'speculator') continue;
       if (Math.random() >= a.activity) continue;
@@ -1040,7 +1062,7 @@ export class SimulationEngine {
     if (Math.abs(this.sentiment) < 0.001) this.sentiment = 0;
 
     const priceWindow = this.priceRing.window(STRATEGY_WINDOW).data;
-    const market: MarketState = { priceHistory: priceWindow, tick: this.tick, sentiment: this.sentiment, fundamentalValue: this.fundamentalValue, sharesOutstanding: this.sharesOutstanding };
+    const market: MarketState = { priceHistory: priceWindow, tick: this.tick, sentiment: this.sentiment, fundamentalValue: this.fundamentalValue, sharesOutstanding: this.sharesOutstanding, consensusValue: this.consensusValue, advShares: this.advShares };
     const registry = this.buildRegistry();
     const tickTrades: Trade[] = [];
 

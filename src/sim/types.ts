@@ -10,7 +10,8 @@ export type AgentType =
   | 'dealer'
   | 'speculator'
   | 'indexFund'
-  | 'holder';
+  | 'holder'
+  | 'arb';
 
 // Trader styles = a weighting over the [value, momentum, meanReversion, sentiment]
 // signals. Different styles = different kinds of people. 'Adaptive' starts balanced
@@ -227,7 +228,37 @@ export type Agent =
   | DealerAgent
   | SpeculatorAgent
   | IndexFundAgent
-  | HolderAgent;
+  | HolderAgent
+  | ArbAgent;
+
+/**
+ * The arbitrageur: a BAND participant, and the market's structural anchor to value.
+ *
+ * Every other fundamental trader here has a SLOPED demand curve — it wants a bigger position
+ * the cheaper the stock gets. Against a fixed float that produces an inverse-demand
+ * equilibrium where the discount settles at roughly `float / (gain x capital)`, which is why
+ * the market sat permanently 6-11% BELOW fair value and why one cohort's capital was
+ * load-bearing: it is the denominator of that expression.
+ *
+ * This agent instead has a near-VERTICAL curve at a fixed reference: inside `band` it does
+ * nothing at all, and outside it it trades at its full permitted rate regardless of how large
+ * the gap is. A band participant pins the equilibrium AT the band edge independently of
+ * anyone's capital, which is the property the sim was missing.
+ *
+ * It is rate- and size-limited so dislocations still take hundreds of ticks to close: that
+ * delay is the "limits to arbitrage" that make mispricings persist in real markets.
+ */
+export interface ArbAgent extends AgentAccount {
+  id: string;
+  name: string;
+  type: 'arb';
+  band: number; // no-trade zone around consensus value (fraction)
+  advFrac: number; // max participation per tick as a fraction of recent volume
+  maxFloatFrac: number; // hard cap on |position| as a fraction of the float
+  activity: number;
+  takeProfit: number;
+  stopLoss: number;
+}
 
 /**
  * The long-term retail holder base: the long tail of small shareholders who together own a
@@ -275,4 +306,8 @@ export interface MarketState {
   sentiment: number; // current decaying market sentiment from recent news
   fundamentalValue: number; // the "true" value, permanently repriced by news
   sharesOutstanding: number; // the float, so holders can size a position against it
+  // The valuation an arbitrageur trades against: consensus EPS x multiple. Distinct from
+  // `fundamentalValue` in that it is what the market can OBSERVE and agree on.
+  consensusValue: number;
+  advShares: number; // recent average daily volume, to rate-limit participation realistically
 }

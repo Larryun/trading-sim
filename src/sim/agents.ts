@@ -44,6 +44,7 @@ export const AGENT_TYPE_LABELS: Record<AgentType, string> = {
   speculator: 'Options speculator',
   indexFund: 'Index / passive fund',
   holder: 'Long-term holders (retail)',
+  arb: 'Arbitrageur',
 };
 
 export const AGENT_TYPE_COLORS: Record<AgentType, string> = {
@@ -57,6 +58,7 @@ export const AGENT_TYPE_COLORS: Record<AgentType, string> = {
   speculator: '#f472b6',
   indexFund: '#64748b',
   holder: '#a78bfa',
+  arb: '#fbbf24',
 };
 
 /**
@@ -124,6 +126,18 @@ const NOISE_CROWD_GAIN = 0.8;
 const NOISE_CROWD_WEIGHT = 0.12;
 const NOISE_LIMIT_SHARE = 0.55;
 const NOISE_LIMIT_OFFSET = 0.001;
+
+// The arbitrageur's band (see ArbAgent in types.ts). The band width sets where the equilibrium
+// gap gets pinned; the rate and float caps set how SLOWLY it gets there.
+const ARB_BAND = 0.03;
+const ARB_ADV_FRAC = 0.04; // participation rate; higher drains the book (0.10 -> 81% two-sided)
+// Per-arb position bound. This trades anchor strength against concentration, measured at 40k:
+// 0.08 (cohort up to 32% of float) -> gap -2.8%, 16.7% of ticks above fair, liveness 97.6%
+// 0.05 (up to 20%)                 -> gap -4.8%,  5.4% above, liveness 99.1%   <- chosen
+// 0.03 (up to 12%)                 -> gap -5.7%,  4.1% above, liveness 99.9%
+// Chosen at 0.05 so the anchor does not simply relocate the float concentration it fixed.
+const ARB_MAX_FLOAT_FRAC = 0.05;
+const ARB_PASSIVE_OFFSET = 0.002; // posts just behind the touch rather than crossing it
 const jitter = (x: number) => x * (1 + (Math.random() * 2 - 1) * STYLE_JITTER);
 
 /** Style-aware display color: traders color by style, everyone else by type. */
@@ -260,6 +274,15 @@ export function createAgent(
         activity: 1, takeProfit: 0, stopLoss: 0,
         ...account,
         ...(allCash ? {} : { cash: capital * 0.05, shares: (capital * 0.95) / startingPrice }),
+      };
+    case 'arb':
+      // Seeded ALL-CASH so it takes shares from nobody at t=0 and must buy in like a new
+      // entrant. Its cash and its position bound are matched (see ARB_MAX_FLOAT_FRAC), so
+      // neither is a hidden constant that silently does the other's job.
+      return {
+        id, name, type, band: ARB_BAND, advFrac: ARB_ADV_FRAC, maxFloatFrac: ARB_MAX_FLOAT_FRAC,
+        activity: 1, takeProfit: 0, stopLoss: 0,
+        ...account, cash: capital, shares: 0, avgCost: 0,
       };
     case 'holder':
       // The long-term retail base. Almost ALL shares, almost no cash: these are people who
@@ -513,6 +536,33 @@ export function decideOrder(agent: Agent, market: MarketState): OrderIntent[] {
     case 'speculator':
       // Trades OPTIONS, not the stock — handled in the engine (needs the option chain).
       return [];
+    case 'arb': {
+      // A BAND, not a slope. Inside the deadband it does nothing; outside it, it trades at its
+      // full permitted rate regardless of how big the gap is. That near-vertical response is
+      // what pins the equilibrium at the band edge independently of any cohort's capital —
+      // a sloped (size-proportional) response would just reintroduce the inverse-demand
+      // equilibrium this agent exists to remove.
+      const ref = market.consensusValue;
+      if (ref <= 0 || price <= 0) return [];
+      const gap = (ref - price) / ref; // + = cheap vs consensus
+      if (Math.abs(gap) <= agent.band) return [];
+
+      // Rate limit: participate in only a slice of recent volume, so a dislocation takes
+      // hundreds of ticks to close. This delay IS the limits-to-arbitrage that let real
+      // mispricings persist; without it the anchor would erase gaps instantly, which is its
+      // own kind of unrealism.
+      const rate = Math.max(MIN_ORDER, market.advShares * agent.advFrac);
+      const bound = agent.maxFloatFrac * market.sharesOutstanding;
+      const room = gap > 0 ? bound - agent.shares : agent.shares + bound; // capacity that way
+      const size = Math.min(rate, Math.max(0, room));
+      if (size < MIN_ORDER) return [];
+      // PASSIVE limit orders, not market orders. A real arbitrageur works its orders patiently
+      // rather than crossing the spread every tick — and crossing was costing the book: an
+      // aggressive arb of this size dropped two-sided quoting from ~97% to ~91%. Posting
+      // instead means the anchor ADDS liquidity while it corrects the gap.
+      const off = 1 + (gap > 0 ? -ARB_PASSIVE_OFFSET : ARB_PASSIVE_OFFSET);
+      return [{ side: gap > 0 ? 'buy' : 'sell', size, limitPrice: price * off }];
+    }
     case 'holder': {
       // Slow and weakly valuation-aware: this cohort sits still unless the stock gets far
       // away from fair value, then supplies a TRICKLE of stock into euphoria and slowly buys
@@ -713,6 +763,25 @@ export function explainDecision(agent: Agent, market: MarketState): DecisionExpl
         detail: v === 'hold' ? 'Price flat — nothing to re-hedge.'
           : shortGamma ? `Short gamma: price ${dS > 0 ? 'rose' : 'fell'} → ${v}s in the SAME direction, accelerating the move.`
           : `Long gamma: price ${dS > 0 ? 'rose' : 'fell'} → ${v}s AGAINST the move, pinning toward the strike.`,
+      };
+    }
+    case 'arb': {
+      const ref = market.consensusValue;
+      const gap = ref > 0 ? (ref - price) / ref : 0;
+      const inBand = Math.abs(gap) <= agent.band;
+      const v: Verdict = inBand ? 'hold' : gap > 0 ? 'buy' : 'sell';
+      return {
+        rule: `Arbitrageur — trades the gap between price and the consensus valuation, but as a BAND rather than a slope: nothing at all inside ±${(agent.band * 100).toFixed(0)}%, then full size outside it, whichever way the gap points.`,
+        signals: [
+          { label: 'Consensus value', value: `$${ref.toFixed(2)}`, lean: 0 },
+          { label: 'Gap vs price', value: `${(gap * 100).toFixed(1)}%`, lean: gap > 0 ? 1 : gap < 0 ? -1 : 0 },
+          { label: 'Position', value: `${agent.shares.toFixed(0)} sh`, lean: 0 },
+          { label: 'Cap', value: `±${(agent.maxFloatFrac * 100).toFixed(0)}% of float`, lean: 0 },
+        ],
+        verdict: v,
+        detail: inBand
+          ? `Price is within the band — nothing to do. Its whole job is to be absent until the gap is worth trading.`
+          : `${gap > 0 ? 'Price below consensus → buying' : 'Price above consensus → selling (it can short)'} at up to ${(agent.advFrac * 100).toFixed(0)}% of recent volume per tick, so the correction takes hundreds of ticks rather than happening at once.`,
       };
     }
     case 'holder': {

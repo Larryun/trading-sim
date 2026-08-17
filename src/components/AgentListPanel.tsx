@@ -15,7 +15,7 @@ interface Props {
   sparkInterval: number; // ticks per sparkline point (= the chart interval)
 }
 
-const AGENT_TYPES: AgentType[] = ['noise', 'marketMaker', 'fomoHerd', 'whale', 'panicSeller', 'trader', 'dealer', 'speculator', 'indexFund', 'holder'];
+const AGENT_TYPES: AgentType[] = ['noise', 'marketMaker', 'fomoHerd', 'whale', 'panicSeller', 'trader', 'dealer', 'speculator', 'indexFund', 'holder', 'arb'];
 const TRADER_STYLE_KEYS = Object.keys(TRADER_STYLES) as TraderStyle[];
 
 // Which types use the shared take-profit / stop-loss exit overlay.

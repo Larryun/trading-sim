@@ -74,6 +74,8 @@ export function useSimulation() {
   const [dealerState, setDealerState] = useState(() => engineRef.current.optionsDealerState);
   const [optionGreeks, setOptionGreeks] = useState(() => engineRef.current.optionGreeks);
   const [fundamentalValue, setFundamentalValue] = useState(engineRef.current.fundamentalValue);
+  const [consensusValue, setConsensusValue] = useState(engineRef.current.consensusValue);
+  const [advShares, setAdvShares] = useState(engineRef.current.advShares);
   const [eps, setEps] = useState(engineRef.current.eps);
   const valuationMultiple = engineRef.current.valuationMultiple;
   const contractMultiplier = engineRef.current.contractMultiplier;
@@ -171,6 +173,8 @@ export function useSimulation() {
       setOptionGreeks(engine.optionGreeks);
     }
     setFundamentalValue(engine.fundamentalValue);
+    setConsensusValue(engine.consensusValue);
+    setAdvShares(engine.advShares);
     setEps(engine.eps);
     setLastUserFill(engine.lastUserFill);
     setUserRestingOrders(engine.book.countOrdersByOwner('user'));
@@ -265,6 +269,8 @@ export function useSimulation() {
     engineRef.current.triggerEvent(sentimentDelta);
     setSentiment(engineRef.current.sentiment);
     setFundamentalValue(engineRef.current.fundamentalValue);
+    setConsensusValue(engineRef.current.consensusValue);
+    setAdvShares(engineRef.current.advShares);
   }, []);
 
   const toggleAutoNews = useCallback(() => {
@@ -360,6 +366,8 @@ export function useSimulation() {
     currentPrice,
     panelPrice,
     fundamentalValue,
+    consensusValue,
+    advShares,
     eps,
     valuationMultiple,
     recentPrices,
