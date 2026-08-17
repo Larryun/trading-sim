@@ -143,15 +143,18 @@ describe('memory: no engine collection grows with elapsed time', () => {
     // Measured this way the engine holds ~7.4MB flat from 20k to 800k ticks. Without --expose-gc
     // heapUsed just reports wherever GC happened to be and the numbers are meaningless, so the
     // check is skipped rather than made to look like it passed.
-    const gc = (globalThis as { gc?: () => void }).gc;
-    if (!gc) {
+    // Reached through globalThis rather than the `gc`/`process` globals directly: this file is
+    // type-checked by the APP tsconfig, which has no node types.
+    const g = globalThis as { gc?: () => void; process?: { memoryUsage: () => { heapUsed: number } } };
+    const gc = g.gc;
+    if (!gc || !g.process) {
       expect(true).toBe(true);
       return;
     }
     const e = buildEngine();
     const settle = () => {
       for (let i = 0; i < 4; i++) gc();
-      return process.memoryUsage().heapUsed / 1048576;
+      return g.process!.memoryUsage().heapUsed / 1048576;
     };
     for (let t = 0; t < 20000; t++) e.step();
     const early = settle();
