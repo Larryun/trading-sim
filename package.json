@@ -9,6 +9,7 @@
     "lint": "oxlint",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:memory": "NODE_OPTIONS=--expose-gc vitest run src/sim/__tests__/memory.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {
