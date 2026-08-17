@@ -119,6 +119,7 @@ const STYLE_JITTER = 0.35;
  */
 export const MAX_SINGLE_NAME_EXPOSURE = 0.85;
 
+
 // Retail flow shape (see the 'noise' case): a standing buy tilt, a shared attention factor
 // so accounts don't cancel each other out, and a large share of passive limit orders.
 const NOISE_BUY_BIAS = 0.04; // ~54/46 buy/sell at neutral sentiment

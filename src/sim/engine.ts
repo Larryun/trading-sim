@@ -90,7 +90,17 @@ const OPTION_MAX_OI_FRACTION = 0.15;
 // Arbitrageurs must be able to short: an anchor that can only correct DISCOUNTS is a one-way
 // bid, and the market could then never be pulled back down from a premium.
 const CAN_SHORT = new Set<AgentType>(['trader', 'dealer', 'marketMaker', 'arb']);
-const SHORT_COLLATERAL = 1; // short exposure may reach this * EQUITY (not cash — see below)
+/**
+ * Short exposure may reach this multiple of EQUITY (not cash — see shortCapacity below).
+ *
+ * 2x is Reg T: 50% initial margin against 25% maintenance. At 1x the margin call was
+ * unreachable and so short squeezes could not happen at all — a fresh short starts at
+ * equity/exposure = 1.00 and a call needs 0.25, which by (2-k)/k = 0.25 requires price to rise
+ * ~60% while the position is still held, and agents trim first (0 calls in 40,000 ticks).
+ * At 2x a short starts at 0.50 and (3-2k)/2k = 0.25 gives k = 1.2, so a ~20% adverse move
+ * triggers a call — which is what lets forced covering beget forced covering, i.e. a squeeze.
+ */
+const SHORT_COLLATERAL = 2;
 const MAINT_MARGIN = 0.25; // margin call when equity falls below this * short exposure
 
 /**
@@ -1190,6 +1200,16 @@ export class SimulationEngine {
           for (const t of this.book.submitMarketOrder('buy', cover, agent.id, this.tick)) {
             this.settle(t, registry);
             tickTrades.push(t);
+          }
+          // The buy-in is deliberately NOT capped by cash: the borrowed stock must be returned,
+          // and a forced liquidation that stops half-way leaves a phantom short. But it must not
+          // leave the account OVERDRAWN either — every other purchase path in this engine is
+          // funding-checked, and this one silently ran a 3,000-share short to -$201k. If the
+          // account could not fund its own liquidation, the broker absorbs the deficit, exactly
+          // as it does for an unfundable wind-down, and the injection is recorded.
+          if (agent.cash < 0) {
+            this.brokerWriteOffs += -agent.cash;
+            agent.cash = 0;
           }
           // A maker must keep quoting even while covering — dropping out of the book is
           // more damaging to the market than its own inventory problem.

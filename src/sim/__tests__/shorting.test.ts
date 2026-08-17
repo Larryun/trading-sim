@@ -393,30 +393,39 @@ describe('the agent margin call: it works, but is unreachable and uncapped', () 
     expect(e.sharesOutstanding).toBeCloseTo(floatBefore, 0);
   });
 
-  it.fails('does not leave a margin-called agent with negative cash', () => {
+  it('never leaves a margin-called agent overdrawn, and records the deficit', () => {
     // Real-market property: an account cannot pay for a buy-in with money it does not have.
-    // Everywhere else in the engine a purchase is capped by freeBuyingPower, and an unfundable
-    // closeout is absorbed by the broker and recorded in brokerWriteOffs. The margin-call path
-    // has neither cap nor write-off branch, so it covers in full regardless of funding and the
-    // account is left silently overdrawn (measured: -$201k on a 3,000-share short).
-    // Total cash is still conserved because the sellers really are paid, so this is a solvency
-    // REPORTING failure rather than fabrication — but an overdrawn account should be impossible.
+    // The buy-in itself is deliberately NOT capped by cash — the borrowed stock must be returned
+    // and a half-finished liquidation leaves a phantom short — so instead the broker absorbs any
+    // deficit and it is recorded, exactly as for an unfundable wind-down. Before this, the
+    // margin-call path was the one purchase path in the engine with neither a funding check nor
+    // a write-off branch, and it ran a 3,000-share short to -$201k.
     const e = build();
     const px = e.currentPrice;
     const a = e.agents.find((x) => x.type === 'trader')!;
     a.shares = -3000;
-    a.cash = 3000 * px * 0.3;
+    a.cash = 3000 * px * 0.3; // nowhere near enough to buy 3,000 shares back
+    const writeOffsBefore = e.brokerWriteOffs;
 
     e.step();
 
+    // Covered in full (the borrow is returned) and NOT overdrawn.
+    expect(a.shares).toBeGreaterThan(-0.05);
     expect(a.cash).toBeGreaterThan(-1);
+    // The cash the broker had to put in is visible rather than conjured.
+    expect(e.brokerWriteOffs).toBeGreaterThan(writeOffsBefore);
   });
 
   it('never reaches a margin call under its own dynamics — the squeeze is unreachable', () => {
-    // Documents a REALISM GAP rather than a crash. Short capacity caps exposure at equity, so a
-    // fresh short starts at equity/exposure = 1.00 while a call needs 0.25; solving (2-k)/k =
-    // 0.25 means price must rise ~60% while the position is still held. Agents trim long before
-    // that, so margin-call-driven short squeezes never actually occur: 0 calls in 40,000 ticks.
+    // Documents a REALISM GAP rather than a crash, and the cause is NOT the margin rules.
+    // Measured: raising short margin capacity to Reg T 2x and then raising the short exposure
+    // cap to 1.6x and 2.2x equity all produced 0 calls. The actual blockers are that price sits
+    // BELOW fair value on 100% of ticks so traders want any short only 5.8% of the time, and
+    // that they rebalance continuously and cover VOLUNTARILY before equity erodes to 25%.
+    // A squeeze needs a stubborn levered short held through a rising market, which no archetype
+    // provides — and it cannot enter one anyway while the market never trades at a premium.
+    // This reduces to the persistent-discount defect (see CLAUDE.md), the same root cause as
+    // bubbles being inexpressible.
     //
     // The assertion is deliberately the OBSERVED behaviour, so that if the model ever does start
     // producing margin calls naturally this test fails and someone re-reads this comment. That
