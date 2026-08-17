@@ -118,24 +118,21 @@ const CAN_SHORT = new Set<AgentType>(['trader', 'dealer', 'marketMaker', 'arb'])
 const SHORT_COLLATERAL = 2;
 const MAINT_MARGIN = 0.25; // margin call when equity falls below this * short exposure
 
-/**
- * The largest slice of the company any ONE active fund will accumulate.
+/*
+ * There is deliberately NO per-fund ownership cap.
  *
- * Real funds don't quietly buy a majority of a business: diversification rules cap how much
- * of a single issuer they hold, and crossing ~5%/10% triggers disclosure and control
- * questions that turn a passive position into an activist campaign. Without a limit here, a
- * cohort whose capital rivals the whole market cap just buys most of the float and the
- * "market" becomes a few funds holding everything.
+ * There used to be one (20% of the float), justified as a diversification/disclosure limit. It
+ * was the wrong mechanism: a hard wall does not behave like a real constraint. Tightening it to
+ * 10% starved price discovery outright — capped-out value funds can no longer buy when price
+ * falls below fair, so nothing arbitrages the gap and tracking error blew out to 70-80%. Even at
+ * 20% it silently pinned funds at exactly 24,770 shares, which is the kind of round number that
+ * only ever comes from a constant.
  *
- * Deliberately set as a loose BACKSTOP, not a working constraint. A tight cap (10%) starves
- * price discovery: capped-out value funds can no longer buy when price falls below fair, so
- * nothing arbitrages the gap and tracking error blew out to 70-80%. The realistic fix for
- * concentration is a float with many owners, not a leash on the informed traders.
- *
- * Index funds and the retail holder base are EXEMPT: they legitimately hold large stakes and
- * are already bounded by their own mandates.
+ * What limits a real fund's stake is its MANDATE and its CAPITAL, both of which are already
+ * modelled: exposure is bounded by MAX_SINGLE_NAME_EXPOSURE as a fraction of equity, purchases
+ * are bounded by freeBuyingPower, and the float has enough genuine long-term owners (index funds
+ * and the retail holder base) that no active fund can buy most of it anyway.
  */
-const AGENT_MAX_OWNERSHIP = 0.2;
 
 /**
  * How much MORE the account may sell short, in shares.
@@ -1252,16 +1249,10 @@ export class SimulationEngine {
       let availShares = agent.shares;
       const maxShort = CAN_SHORT.has(agent.type) ? shortCapacity(agent, px) : 0;
 
-      // Concentration limit: how much more of the company this fund may still buy.
-      const ownRoom = agent.type === 'indexFund' || agent.type === 'holder'
-        ? Infinity
-        : Math.max(0, AGENT_MAX_OWNERSHIP * this.sharesOutstanding - agent.shares);
-
       const risk = this.updateRiskScale(agent, px); // de-risked after losses, restored on recovery
       for (const intent of intents) {
         let size = intent.size * risk;
         if (intent.side === 'buy') {
-          size = Math.min(size, ownRoom);
           if (intent.limitPrice != null) {
             size = Math.min(size, intent.limitPrice > 0 ? availCash / (intent.limitPrice * (1 + this.feeBps / 10000)) : 0);
           } else {
