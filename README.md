@@ -22,11 +22,24 @@ npm run build    # type-check + production build
   a `$0.01` tick grid, walk-the-book slippage, and finite participant-supplied liquidity (the
   book can genuinely thin out).
 - **A cast of agents**, each a simple, tunable rule that produces rich emergent dynamics:
-  market makers (earn the spread, widen on volatility), a configurable **Trader** with style
-  presets (value / trend / contrarian / news / balanced / adaptive-learning), a **FOMO herd**,
-  **panic sellers**, a value-timed **institution/whale**, and an **options dealer** (gamma).
+  **market makers** (Avellaneda–Stoikov style — they target flat inventory, may go short, and
+  express inventory through a reservation price), a configurable **Trader** with style presets
+  (value / trend / contrarian / news / balanced / adaptive-learning), a **FOMO herd**, **panic
+  sellers**, a value-timed **institution/whale**, an **options dealer** (gamma), plus the
+  participants that make the ownership structure realistic — **index/passive funds**, a
+  **long-term retail holder base**, and an **arbitrageur**.
+- **A realistic participant mix**, tuned against *two separate* real-world facts: who **owns**
+  the float and who generates the **volume**. These differ wildly — market makers own almost
+  nothing yet are roughly half of all trading, while passive funds own a fifth of the company
+  and barely trade at all.
 - **Earnings-based fair value** — `fair = EPS × multiple`, moved by quarterly earnings
   reports (beats/misses **vs consensus**) and news-as-guidance.
+- **A structural anchor to value.** Modelling value investors alone is not enough: a demand
+  curve that simply buys more as the stock cheapens settles at a permanent *discount* rather
+  than at fair value, so the market could never trade above fair or form a bubble. A
+  **band arbitrageur** — inactive inside a band of the consensus valuation, then trading at
+  full size outside it — pins price to value regardless of whose capital is largest. It is
+  rate-limited, so dislocations still take hundreds of ticks to close (limits to arbitrage).
 - **Sentiment as a lasting regime** — a slow bull/bear tide + medium news shocks + fast
   reflexive texture, self-limiting and mean-reverting, priced as a **valuation premium** over
   fair value.
@@ -50,22 +63,42 @@ The educational write-up of every mechanism is in **[`docs/CONCEPTS.md`](docs/CO
 ## Project structure
 
 ```
-src/sim/        pure simulation core (no React): engine, agents, orderBook, options, bars, ringBuffer, types
-src/hooks/      useSimulation — owns the engine, steps it, mirrors state to React
-src/components/ UI (hand-rolled SVG charts, shared kit + design tokens in ui.ts)
-src/views/      the four routes
-scripts/        headless evaluation harness
-docs/CONCEPTS.md  the educational concepts guide
+src/sim/            pure simulation core (no React): engine, agents, orderBook, options,
+                    defaultCast (the opening population), bars, ringBuffer, types
+src/sim/__tests__/  vitest suite asserting real-market properties per mechanism
+src/hooks/          useSimulation — owns the engine, steps it, mirrors state to React
+src/components/     UI (hand-rolled SVG charts, shared kit + design tokens in ui.ts)
+src/views/          the four routes
+scripts/            headless evaluation harness
+docs/CONCEPTS.md    the educational concepts guide
 ```
+
+The opening cast lives in a single place (`src/sim/defaultCast.ts`) that both the app and the
+headless harness import, so the two can never simulate different markets.
+
+### Tests
+
+```bash
+npm test
+```
+
+The suite asserts **market properties** rather than implementation details — shares are
+conserved across every operation, cash is never fabricated, short capacity cannot self-finance,
+a liquidating account cannot ratchet the price, options obey put-call parity, and over long runs
+price stays tethered to fair value with a two-sided book. Because the engine uses `Math.random`,
+the behavioural tests assert bounds and statistics rather than exact prices.
 
 ### Headless evaluation
 
-The market can be run without the UI to check its health (tracking error, volatility, spread,
-liquidity, cash drift, solvency):
+The market can be run without the UI to check its health:
 
 ```bash
-npx tsx scripts/sim-eval.mts '{"ticks":6000,"autoNews":true}'
+npx tsx scripts/sim-eval.mts '{"ticks":20000,"autoNews":true}'
 ```
+
+It reports tracking error against fair value, the **signed** gap (plus the fraction of ticks
+spent above and below fair — absolute error hides a systematic one-sided discount), volatility,
+spread, book liveness, cash drift and solvency.
 
 ## Caveats
 
@@ -75,3 +108,15 @@ commissions/taxes/borrow fees/latency/auctions/circuit-breakers), and agents tha
 one tidy rule. Within those bounds it faithfully demonstrates the mechanics that matter — price
 emerges from order flow, liquidity is finite, supply is conserved, and the participant mix
 decides whether the market trends, oscillates, or crashes.
+
+Known limitations, kept explicit rather than hidden:
+
+- Price sits at a modest **discount** to fair value on average, and trades above it a minority
+  of the time. The band arbitrageur greatly reduced this but did not eliminate it.
+- Over very long runs (60k+ ticks) the tether loosens, because compounding earnings raise fair
+  value faster than a **fixed float** of long-biased agents can chase it.
+- Deleting most of the long-term holder base at once collapses the market. The float has to be
+  owned by participants who want to hold it; the direction is arguably right, the magnitude
+  is not.
+
+`docs/CONCEPTS.md` explains each mechanism, and — where a naive model fails — why.
