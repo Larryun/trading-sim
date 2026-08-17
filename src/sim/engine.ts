@@ -20,7 +20,6 @@ const USER_STARTING_CASH = 100000;
 const HISTORY_CAP = 8192;
 const STRATEGY_WINDOW = 256;
 const LIQUIDATION_ADV_FRAC = 0.08; // share of recent volume a winding-down account may use per tick
-const LIQUIDATION_OFFSET = 0.001;
 const ADV_WINDOW = 200; // ticks of volume history behind `advShares`
 const MAX_TRADES = 500;
 
@@ -288,6 +287,7 @@ export class SimulationEngine {
    * appearing from nowhere — if this grows, deletions are inflating the system.
    */
   brokerWriteOffs = 0;
+  private writtenOff = new Set<string>();
   optionsDealer: AgentAccount = { startingCapital: 0, cash: 0, shares: 0, avgCost: 0, realizedPnl: 0, tradeCount: 0 };
 
   private nextAgentNum: Record<AgentType, number> = {
@@ -1003,14 +1003,30 @@ export class SimulationEngine {
           // It cannot fund the cover. That is a blown-up short, and in reality the broker closes
           // it out and absorbs the shortfall. Do exactly that, but RECORD it, so the cash
           // entering the system is visible rather than silently conjured.
-          const owed = Math.abs(remaining) * px;
-          this.brokerWriteOffs += Math.max(0, owed - Math.max(0, acct.cash));
-          acct.cash += Math.max(0, owed - Math.max(0, acct.cash));
+          //
+          // ONCE per account: the first version re-ran this every tick, so an account that could
+          // never make progress was topped up with fresh cash indefinitely — an unbounded cash
+          // injection feeding a rising market.
+          if (!this.writtenOff.has(id)) {
+            const owed = Math.abs(remaining) * px;
+            const shortfall = Math.max(0, owed - Math.max(0, acct.cash));
+            this.brokerWriteOffs += shortfall;
+            acct.cash += shortfall;
+            this.writtenOff.add(id);
+          }
           continue;
         }
       }
-      // Posted just behind the touch: patient, not aggressive.
-      const limit = px * (side === 'sell' ? 1 + LIQUIDATION_OFFSET : 1 - LIQUIDATION_OFFSET);
+      // Anchor to the PREVAILING QUOTES, never to the last trade price.
+      //
+      // Pricing this off `px` (its own previous print) plus an offset is the self-referential
+      // ratchet already documented for the market maker, and it behaved identically: each fill
+      // set a new last price, the next quote went 0.1% above THAT, and the compounding drove the
+      // stock from $100 to $505,745 in dust-sized trades. Joining the resting quote cannot
+      // ratchet, because the order never prices through the market.
+      const bid = this.book.getBestBid();
+      const ask = this.book.getBestAsk();
+      const limit = side === 'sell' ? (ask ?? bid ?? px) : (bid ?? ask ?? px);
       for (const t of this.book.submitLimitOrder(side, size, limit, id, this.tick)) {
         this.settle(t, registry);
         out.push(t);
@@ -1020,6 +1036,7 @@ export class SimulationEngine {
     this.liquidations = this.liquidations.filter((a) => {
       if (Math.abs(a.shares) >= MIN_ORDER) return true;
       this.book.cancelOrdersByOwner(a.id);
+      this.writtenOff.delete(a.id);
       return false;
     });
     return out;
