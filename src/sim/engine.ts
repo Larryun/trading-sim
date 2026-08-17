@@ -282,6 +282,12 @@ export class SimulationEngine {
    * A real fund winds down gradually, and the market absorbs it voluntarily at prices it chooses.
    */
   private liquidations: Agent[] = [];
+  /**
+   * Cash the broker/clearing house has had to inject to close out accounts that could not fund
+   * covering their own shorts. Real money enters the market here, so it is tracked rather than
+   * appearing from nowhere — if this grows, deletions are inflating the system.
+   */
+  brokerWriteOffs = 0;
   optionsDealer: AgentAccount = { startingCapital: 0, cash: 0, shares: 0, avgCost: 0, realizedPnl: 0, tradeCount: 0 };
 
   private nextAgentNum: Record<AgentType, number> = {
@@ -985,7 +991,24 @@ export class SimulationEngine {
       const remaining = acct.shares;
       if (Math.abs(remaining) < MIN_ORDER) continue;
       const side: Side = remaining > 0 ? 'sell' : 'buy';
-      const size = Math.min(rate, Math.abs(remaining));
+      let size = Math.min(rate, Math.abs(remaining));
+      if (side === 'buy') {
+        // COVERING A SHORT costs cash, and the account may not have it. Without this cap the
+        // buy-back paid real sellers with money that did not exist: a $649k short holding $5k
+        // covered in full and ended at -$664k, fabricating cash and inflating the market on
+        // every such deletion. Shares stayed conserved; cash did not.
+        const affordable = px > 0 ? freeBuyingPower(acct, px) / px : 0;
+        size = Math.min(size, affordable);
+        if (size < MIN_ORDER) {
+          // It cannot fund the cover. That is a blown-up short, and in reality the broker closes
+          // it out and absorbs the shortfall. Do exactly that, but RECORD it, so the cash
+          // entering the system is visible rather than silently conjured.
+          const owed = Math.abs(remaining) * px;
+          this.brokerWriteOffs += Math.max(0, owed - Math.max(0, acct.cash));
+          acct.cash += Math.max(0, owed - Math.max(0, acct.cash));
+          continue;
+        }
+      }
       // Posted just behind the touch: patient, not aggressive.
       const limit = px * (side === 'sell' ? 1 + LIQUIDATION_OFFSET : 1 - LIQUIDATION_OFFSET);
       for (const t of this.book.submitLimitOrder(side, size, limit, id, this.tick)) {
