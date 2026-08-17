@@ -72,6 +72,11 @@ export const AGENT_TYPE_COLORS: Record<AgentType, string> = {
  *   adaptive:   starts balanced but LEARNS which signals work (old adaptive/AI)
  */
 /**
+ * Every style carries SOME weight on value (even the trend follower): in a real market almost
+ * everyone glances at valuation, so the pull toward fundamentals is distributed rather than
+ * resting on one dedicated cohort. These weights are only ever ADDED to — cutting value's own
+ * 0.6 weight removes the market's only fundamental anchor and price collapses.
+ *
  * Each style carries its own HORIZON and temperament, not just signal weights. A trend
  * follower that looks back 10 ticks is a scalper, not a CTA — real trend funds run 50-200
  * period lookbacks, while event-driven desks react within a few ticks. Giving every style
@@ -79,11 +84,11 @@ export const AGENT_TYPE_COLORS: Record<AgentType, string> = {
  */
 export const TRADER_STYLES: Record<TraderStyle, { label: string; color: string; weights: number[]; learningRate: number; window: number; conviction: number; activity: number }> = {
   value: { label: 'Value', color: '#22d3ee', weights: [0.6, 0, 0.2, -0.2], learningRate: 0, window: 30, conviction: 10, activity: 0.5 },
-  trend: { label: 'Trend', color: '#f59e0b', weights: [0, 0.7, -0.1, 0.2], learningRate: 0, window: 80, conviction: 12, activity: 0.5 },
-  contrarian: { label: 'Contrarian', color: '#a78bfa', weights: [0.25, -0.15, 0.5, -0.1], learningRate: 0, window: 12, conviction: 10, activity: 0.6 },
-  news: { label: 'News', color: '#34d399', weights: [0.15, 0.15, 0, 0.7], learningRate: 0, window: 6, conviction: 12, activity: 0.8 },
-  balanced: { label: 'Balanced', color: '#818cf8', weights: [0.25, 0.25, 0.25, 0.25], learningRate: 0, window: 20, conviction: 10, activity: 0.6 },
-  adaptive: { label: 'Adaptive', color: '#fb7185', weights: [0.25, 0.25, 0.25, 0.25], learningRate: 0.5, window: 20, conviction: 10, activity: 0.6 },
+  trend: { label: 'Trend', color: '#f59e0b', weights: [0.08, 0.7, -0.1, 0.2], learningRate: 0, window: 80, conviction: 12, activity: 0.5 },
+  contrarian: { label: 'Contrarian', color: '#a78bfa', weights: [0.3, -0.15, 0.5, -0.1], learningRate: 0, window: 12, conviction: 10, activity: 0.6 },
+  news: { label: 'News', color: '#34d399', weights: [0.2, 0.15, 0, 0.7], learningRate: 0, window: 6, conviction: 12, activity: 0.8 },
+  balanced: { label: 'Balanced', color: '#818cf8', weights: [0.3, 0.25, 0.25, 0.25], learningRate: 0, window: 20, conviction: 10, activity: 0.6 },
+  adaptive: { label: 'Adaptive', color: '#fb7185', weights: [0.3, 0.25, 0.25, 0.25], learningRate: 0.5, window: 20, conviction: 10, activity: 0.6 },
 };
 
 /**
@@ -148,7 +153,12 @@ export function traderSignals(agent: { window: number }, market: MarketState, pr
   // Value = cheap vs the SENTIMENT-ADJUSTED fair (multiple expansion), so a bullish
   // regime makes the pool willing to pay a premium and price trades above earnings-fair.
   const pv = perceivedValue(market);
-  const value = clamp(pv > 0 ? ((pv - price) / pv) * 10 : 0);
+  // tanh, NOT clamp: the hard clamp SATURATES at a 10% gap, so beyond that the restoring
+  // force stops growing no matter how far price falls below value — exactly when it should be
+  // strongest. tanh keeps the identical slope near zero (that slope is a knife edge: reducing
+  // this gain from 10 to 5 triples tracking error, and to 3 drives price to ~$0) while staying
+  // monotone out to +/-40%.
+  const value = Math.tanh(pv > 0 ? ((pv - price) / pv) * 10 : 0);
   const momentum = clamp(pctChange(market.priceHistory, agent.window) * 50);
   const ma = movingAverage(market.priceHistory, agent.window);
   const meanRev = clamp(ma > 0 ? (-(price - ma) / ma) * 10 : 0); // above MA = bearish
