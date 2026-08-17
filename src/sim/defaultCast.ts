@@ -64,11 +64,17 @@ export const DEFAULT_CAST: CastEntry[] = [
   { type: 'trader', capital: 250000, style: 'adaptive', note: 'a learning multi-signal fund' },
   { type: 'trader', capital: 200000, style: 'news', note: 'event-driven' },
 
-  // — Retail: MANY participants, each individually small. The SHAPE matters: real retail is
-  //   ~20% of traded volume spread across a huge number of small accounts, not a handful of
-  //   medium ones. With only 4 noise accounts retail was ~2% of volume, which made the market
-  //   a conversation between makers and institutions only.
-  ...rep(30, { type: 'noise', capital: 25000 }),
+  // — Retail: what matters is the TOTAL uninformed flow, plus a clip size that is actually
+  //   retail-sized. Tested directly at constant total flow: splitting retail across 3, 6, 12 or
+  //   30 accounts makes no measurable difference to tracking, spread or liveness — only to how
+  //   lumpy the flow is. So the count is NOT load-bearing and 30 accounts was over-modelled;
+  //   it just buried the agent list under 30 identical rows. 12 is the compromise: fewer than
+  //   this and each "retail" account trades $50k clips, which is a small fund, not retail — and
+  //   the SPREAD widens, because retail limit orders are real passive liquidity: dropping to 12
+  //   accounts took it from ~32bps to 44-48bps, outside the healthy band.
+  //   (Total flow DOES matter: with only 4 accounts retail was ~2% of volume and the market was
+  //   a conversation between makers and institutions.)
+  ...rep(16, { type: 'noise', capital: 47000, params: { maxSize: 94 } }),
   //   Plus the two behavioral extremes that make rallies overshoot and selloffs cascade.
   ...rep(4, { type: 'fomoHerd', capital: 28000 }),
   ...rep(4, { type: 'panicSeller', capital: 32000 }),

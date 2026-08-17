@@ -404,6 +404,15 @@ export class SimulationEngine {
       }
     }
     this.optionPositions.delete(id);
+
+    // LIQUIDATE the stock position before dropping the account. Simply deleting the agent
+    // destroyed its shares: `sharesOutstanding` sums agent holdings, so the float shrank and
+    // everyone else's ownership percentage silently jumped — a share-conservation break.
+    // What a closing fund really does is SELL its holdings into the market and take its cash
+    // home: the shares stay in circulation (someone else now owns them), the cash leaves.
+    // This trades at market, so a large book really does move the price on the way out.
+    if (acct) this.liquidatePosition(acct, id);
+
     this.agents = this.agents.filter((a) => a.id !== id);
     this.pnlSpark.delete(id); // free its sparkline ring
     this.peakEquity.delete(id);
@@ -940,6 +949,34 @@ export class SimulationEngine {
     reg.set('optionsDealer', this.optionsDealer);
     for (const a of this.agents) reg.set(a.id, a);
     return reg;
+  }
+
+  /**
+   * Unwind an account's whole stock position into the book at market.
+   *
+   * Anything the book cannot absorb is transferred as an off-market BLOCK to the market makers
+   * at the last price, cash settled — they are the liquidity providers of last resort, and this
+   * is what keeps shares conserved even when the book is too thin to take the whole position.
+   * Without that fallback a thin book would leave a residue that vanished with the account.
+   */
+  private liquidatePosition(acct: AgentAccount, id: string): void {
+    if (Math.abs(acct.shares) < 1e-9) return;
+    const registry = this.buildRegistry();
+    const side: Side = acct.shares > 0 ? 'sell' : 'buy';
+    for (const t of this.book.submitMarketOrder(side, Math.abs(acct.shares), id, this.tick)) {
+      this.settle(t, registry);
+    }
+    if (Math.abs(acct.shares) < 1e-9) return;
+
+    const px = Math.max(0.01, this.book.getLastTradePrice());
+    const makers = this.agents.filter((a) => a.type === 'marketMaker' && a.id !== id);
+    if (makers.length === 0) return; // nothing to absorb it; leave the position rather than fake it
+    let residual = acct.shares;
+    const per = residual / makers.length;
+    for (const m of makers) {
+      applyTrade(m, residual > 0 ? 'buy' : 'sell', px, Math.abs(per));
+      applyTrade(acct, residual > 0 ? 'sell' : 'buy', px, Math.abs(per));
+    }
   }
 
   private settle(trade: Trade, reg: Map<string, AgentAccount>): void {
